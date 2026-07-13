@@ -1,0 +1,9428 @@
+import React, { useRef, useEffect, useState } from "react";
+import * as THREE from "three";
+
+// ---------- Monster species ----------
+const SPECIES = {
+  mochi: { name: "โมจิ", emoji: "🐰", color: 0xf6a8c0, hp: 30, atk: 5, catch: 0.5, tier: 1, desc: "กระต่ายก้อนกลมขี้อ้อน" },
+  baibua: { name: "ใบบัว", emoji: "🍃", color: 0x8fc98a, hp: 40, atk: 6, catch: 0.45, tier: 1, desc: "สไลม์ใบไม้ใจดี" },
+  mekha: { name: "เมฆา", emoji: "☁️", color: 0x9ec3ef, hp: 45, atk: 7, catch: 0.35, tier: 2, desc: "ก้อนเมฆลอยได้" },
+  plerng: { name: "เพลิง", emoji: "🔥", color: 0xf09a5a, hp: 50, atk: 9, catch: 0.3, tier: 2, desc: "จิ้งจอกไฟจอมซน" },
+  kirara: { name: "คิราระ", emoji: "⭐", color: 0xf5d05a, hp: 60, atk: 11, catch: 0.2, tier: 3, desc: "ดาวทองสุดหายาก!" },
+  phi: { name: "ผีราตรี", emoji: "👻", color: 0xdcdcf0, hp: 75, atk: 13, catch: 0.12, tier: 3, desc: "ภูตแห่งดงไม้แห้ง โผล่เฉพาะกลางคืน" },
+  // 🐾 animal-type monsters (scarier at higher level)
+  nam: { name: "น้ำเงี้ยว", emoji: "🐟", color: 0x4aa0d0, hp: 42, atk: 7, catch: 0.4, tier: 1, desc: "ปลาปีศาจแห่งลำธาร", animal: "fish", weak: "wind" },
+  khiao: { name: "เขี้ยวป่า", emoji: "🐺", color: 0x8a8a92, hp: 55, atk: 10, catch: 0.28, tier: 2, desc: "หมาป่าดุร้าย เขี้ยวคม", animal: "wolf", weak: "fire" },
+  ngu: { name: "นาคาน้อย", emoji: "🐍", color: 0x6ab04a, hp: 60, atk: 11, catch: 0.24, tier: 2, desc: "งูพิษเลื้อยเงียบ", animal: "snake", weak: "earth" },
+  paksi: { name: "เวหาปักษี", emoji: "🦅", color: 0xc98a4a, hp: 65, atk: 12, catch: 0.2, tier: 3, desc: "อินทรีจอมโฉบ", animal: "bird", weak: "ice" },
+  saming: { name: "เสือสมิง", emoji: "🐯", color: 0xe0a040, hp: 80, atk: 14, catch: 0.14, tier: 3, desc: "เสือปีศาจ ราชาแห่งไพร", animal: "tiger", weak: "water" },
+  garuda: { name: "ครุฑอสูร", emoji: "🦁", color: 0xd07a2a, hp: 100, atk: 17, catch: 0.1, tier: 4, desc: "อสูรกายพญาครุฑ", animal: "beast", weak: "light" },
+  // ☁️ sky-realm monsters (map 6: floating islands)
+  wayu: { name: "วายุเทพ", emoji: "🌪️", color: 0xa0e0f0, hp: 90, atk: 16, catch: 0.14, tier: 4, desc: "เทพสายลมแห่งเวหา", animal: "bird", weak: "earth" },
+  taara: { name: "ธาราทิพย์", emoji: "💫", color: 0xc0a0f5, hp: 130, atk: 20, catch: 0.08, tier: 5, desc: "เทพเจ้าดวงดาวสูงสุด!", weak: "arcane" },
+};
+const SPAWN_POOL = ["mochi", "mochi", "baibua", "baibua", "mekha", "plerng", "nam", "khiao", "ngu", "paksi"]; // kirara is a rare roll
+const FLOATY = { mekha: true, phi: true, paksi: true, wayu: true, taara: true }; // species that hover
+// 🗺️ multiple adventure maps (biomes) — warp between them
+const BIOMES = [
+  { id: "meadow", name: "ทุ่งซากุระ", emoji: "🌸", lvMin: 1, lvMax: 20, ground: 0xa8c98a, sky: 0xf0fae2, fog: 0xf0fae2, pool: ["mochi", "baibua", "mekha", "plerng", "nam"], tree: "normal", boss: "baibua", bossName: "ราชินีบุปผา 🌸" },
+  { id: "desert", name: "ทะเลทรายเพลิง", emoji: "🏜️", lvMin: 20, lvMax: 40, ground: 0xe8cc8a, sky: 0xfbe8c0, fog: 0xf5dca8, pool: ["plerng", "ngu", "khiao", "saming"], tree: "dead", boss: "saming", bossName: "ราชาเสือทะเลทราย 🐯" },
+  { id: "snow", name: "ทุ่งหิมะเยือก", emoji: "❄️", lvMin: 40, lvMax: 60, ground: 0xe4ecf5, sky: 0xdce8f5, fog: 0xd0e0f0, pool: ["mekha", "paksi", "nam", "kirara"], tree: "snow", boss: "paksi", bossName: "พญาอินทรีเยือกแข็ง 🦅" },
+  { id: "cave", name: "ถ้ำมรกต", emoji: "🕳️", lvMin: 60, lvMax: 80, ground: 0x5a6a5a, sky: 0x2a3a3a, fog: 0x1a2a2a, pool: ["ngu", "khiao", "phi", "garuda"], tree: "none", boss: "garuda", bossName: "อสูรครุฑเงามืด 🦁" },
+  { id: "volcano", name: "ภูเขาไฟอสูร", emoji: "🌋", lvMin: 80, lvMax: 99, ground: 0x6a3a30, sky: 0x3a1810, fog: 0x5a2418, pool: ["plerng", "saming", "garuda", "phi"], tree: "dead", boss: "garuda", bossName: "พญาอัคคีอสูร 🔥" },
+  { id: "sky", name: "เกาะลอยสวรรค์", emoji: "☁️", lvMin: 99, lvMax: 120, ground: 0xcfe0f0, sky: 0xbfe0ff, fog: 0xd8ecff, pool: ["wayu", "taara", "paksi", "kirara"], tree: "none", boss: "taara", bossName: "เทพเจ้าดวงดาว 💫" },
+];
+const EVOLVED = { mochi: "โมจิคิง", baibua: "บัวหลวง", mekha: "พายุเมฆ", plerng: "อัคคีวัต", kirara: "โนวา", phi: "ภูตราชัน", nam: "วารีนาคี", khiao: "หมาป่าจันทรา", ngu: "พญานาคา", paksi: "สุบรรณราช", saming: "เสือสมิงราชันย์", garuda: "มหาครุฑเทพ", wayu: "พายุเทพเจ้า", taara: "จักรวาลเทพ" };
+
+// ---------- Loot: weapons & outfits ----------
+const RARITY = {
+  common: { name: "ทั่วไป", color: "#8a9aa8" },
+  rare: { name: "หายาก", color: "#59a0e8" },
+  epic: { name: "มหากาพย์", color: "#b07ae0" },
+  secret: { name: "SECRET", color: "#f5c542" },
+  dragon: { name: "มังกร 🐉", color: "#e8552e" },
+};
+const TIER = { common: 1, rare: 2, epic: 3, secret: 4, dragon: 5 };
+const ELEM_GLOW = {
+  fire: 0xf5652e, ice: 0x9adcf5, wind: 0xb8e8c0, water: 0x59a0e8,
+  earth: 0xc09a5a, light: 0xffe28a, arcane: 0xb07ae0, dragon: 0xff4a2a,
+};
+const LOOT = [
+  // starter weapons per class (ได้รับตอนเริ่มเกม)
+  { id: "st_w", slot: "weapon", name: "ดาบฝึกหัด", emoji: "🗡️", rarity: "common", atk: 3, cls: "warrior", starter: true },
+  { id: "st_a", slot: "weapon", name: "ธนูไม้ซ้อม", emoji: "🏹", rarity: "common", atk: 3, cls: "archer", starter: true },
+  { id: "st_m", slot: "weapon", name: "คทาฝึกเวท", emoji: "🪄", rarity: "common", atk: 3, cls: "mage", starter: true },
+  { id: "st_s", slot: "weapon", name: "มีดสั้นฝึกหัด", emoji: "🔪", rarity: "common", atk: 3, cls: "assassin", starter: true },
+  { id: "st_l", slot: "weapon", name: "หอกฝึกหัด", emoji: "🔱", rarity: "common", atk: 3, cls: "lancer", starter: true },
+  { id: "st_k", slot: "weapon", name: "ดาบไม้ซ้อม", emoji: "🗡️", rarity: "common", atk: 3, cls: "samurai", starter: true },
+  // ⚔️ samurai katanas — multiple tiers, each with a distinct look
+  { id: "kf", slot: "weapon", name: "คาตานะเพลิง", emoji: "🔥", rarity: "rare", atk: 7, elem: "fire", cls: "samurai", req: 5 },
+  { id: "ki", slot: "weapon", name: "คาตานะเยือกเย็น", emoji: "❄️", rarity: "epic", atk: 11, def: 2, elem: "ice", cls: "samurai", req: 10 },
+  { id: "kw", slot: "weapon", name: "คาตานะวายุ", emoji: "🍃", rarity: "epic", atk: 13, elem: "wind", cls: "samurai", req: 15 },
+  { id: "kl", slot: "weapon", name: "คาตานะฟ้าสวรรค์", emoji: "🌟", rarity: "secret", atk: 16, def: 3, elem: "light", cls: "samurai", req: 22 },
+  { id: "kd", slot: "weapon", name: "คาตานะมังกร", emoji: "🐉", rarity: "dragon", atk: 22, def: 5, hp: 20, elem: "fire", cls: "samurai", req: 28, set: "dragon" },
+  // ⚔️ warrior elemental swords
+  // ⚔️ WARRIOR swords — unlock every 5 levels (req)
+  { id: "wfw", slot: "weapon", name: "ดาบเพลิงอัคคี", emoji: "🔥", rarity: "rare", atk: 6, elem: "fire", cls: "warrior", req: 5 },
+  { id: "wiw", slot: "weapon", name: "ดาบน้ำแข็งพันปี", emoji: "❄️", rarity: "epic", atk: 10, def: 3, elem: "ice", cls: "warrior", req: 10 },
+  { id: "wew", slot: "weapon", name: "ดาบปฐพีศิลา", emoji: "🌍", rarity: "epic", atk: 11, def: 5, hp: 15, elem: "earth", cls: "warrior", req: 15 },
+  { id: "www", slot: "weapon", name: "ดาบเทพวายุ", emoji: "🌪️", rarity: "secret", atk: 16, def: 4, crit: 8, elem: "wind", cls: "warrior", req: 20 },
+  { id: "wlw", slot: "weapon", name: "ดาบเทพจันทรา", emoji: "🌙", rarity: "secret", atk: 18, hp: 20, crit: 10, elem: "light", cls: "warrior", req: 25 },
+  // 🏹 ARCHER bows
+  { id: "wfa", slot: "weapon", name: "ธนูเพลิง", emoji: "🔥", rarity: "rare", atk: 6, elem: "fire", cls: "archer", req: 5 },
+  { id: "wia", slot: "weapon", name: "ธนูน้ำแข็ง", emoji: "❄️", rarity: "epic", atk: 10, crit: 5, elem: "ice", cls: "archer", req: 10 },
+  { id: "wea", slot: "weapon", name: "ธนูพสุธา", emoji: "🌍", rarity: "epic", atk: 11, def: 3, crit: 6, elem: "earth", cls: "archer", req: 15 },
+  { id: "wwa", slot: "weapon", name: "ธนูพายุวายุ", emoji: "🌪️", rarity: "secret", atk: 15, spd: 8, crit: 10, elem: "wind", cls: "archer", req: 20 },
+  { id: "wla", slot: "weapon", name: "ธนูแสงดารา", emoji: "🌟", rarity: "secret", atk: 17, crit: 15, eva: 5, elem: "light", cls: "archer", req: 25 },
+  // 🔮 MAGE staves
+  { id: "wfm", slot: "weapon", name: "คทาเพลิงนรก", emoji: "🔥", rarity: "rare", atk: 6, elem: "fire", cls: "mage", req: 5 },
+  { id: "wim", slot: "weapon", name: "คทาน้ำแข็งนิรันดร์", emoji: "❄️", rarity: "epic", atk: 10, elem: "ice", cls: "mage", req: 10 },
+  { id: "wtm", slot: "weapon", name: "คทาวารีชล", emoji: "💧", rarity: "epic", atk: 11, hp: 20, elem: "water", cls: "mage", req: 15 },
+  { id: "wwm", slot: "weapon", name: "คทาจันทราวายุ", emoji: "🌪️", rarity: "secret", atk: 15, eva: 5, elem: "wind", cls: "mage", req: 20 },
+  { id: "wlm", slot: "weapon", name: "คทาสุริยเทพ", emoji: "🌟", rarity: "secret", atk: 18, hp: 15, elem: "light", cls: "mage", req: 25 },
+  // 🗡️ ASSASSIN dual daggers
+  { id: "wfs", slot: "weapon", name: "มีดคู่เพลิงพิษ", emoji: "🔥", rarity: "rare", atk: 6, crit: 8, elem: "fire", cls: "assassin", req: 5 },
+  { id: "wis", slot: "weapon", name: "มีดคู่เกล็ดน้ำแข็ง", emoji: "❄️", rarity: "epic", atk: 9, crit: 10, elem: "ice", cls: "assassin", req: 10 },
+  { id: "wes", slot: "weapon", name: "มีดคู่พสุธา", emoji: "🌍", rarity: "epic", atk: 10, def: 3, crit: 8, elem: "earth", cls: "assassin", req: 15 },
+  { id: "wws", slot: "weapon", name: "มีดคู่วายุเงา", emoji: "🌪️", rarity: "secret", atk: 14, spd: 10, crit: 15, eva: 5, elem: "wind", cls: "assassin", req: 20 },
+  { id: "wls", slot: "weapon", name: "มีดคู่จันทราลับ", emoji: "🌙", rarity: "secret", atk: 16, crit: 20, eva: 6, elem: "light", cls: "assassin", req: 25 },
+  { id: "wDs", slot: "weapon", name: "มีดคู่เขี้ยวมังกร", emoji: "🐉", rarity: "dragon", atk: 20, crit: 15, eva: 5, elem: "dragon", cls: "assassin", req: 30 },
+  { id: "o1", slot: "outfit", name: "ผ้าพันคอนุ่มฟู", emoji: "🧣", rarity: "common", hp: 10 },
+  { id: "o2", slot: "outfit", name: "ชุดใบไม้พราย", emoji: "🍀", rarity: "rare", hp: 20, def: 2, elem: "earth" },
+  { id: "o3", slot: "outfit", name: "เกราะเมฆานิล", emoji: "🌩️", rarity: "epic", hp: 30, def: 5, elem: "water" },
+  { id: "oS", slot: "outfit", name: "อาภรณ์ดวงดาว", emoji: "✨", rarity: "secret", hp: 50, def: 8, atk: 5, eva: 5, elem: "light" },
+  { id: "h1", slot: "hat", name: "หมวกฟางชาวสวน", emoji: "👒", rarity: "common", def: 2 },
+  { id: "h2", slot: "hat", name: "หมวกแม่มดราตรี", emoji: "🎩", rarity: "epic", atk: 4, def: 2, elem: "arcane" },
+  { id: "hS", slot: "hat", name: "มงกุฎแสงดารา", emoji: "👑", rarity: "secret", atk: 6, hp: 20, def: 4, crit: 6, elem: "light" },
+  { id: "m1", slot: "mask", name: "แว่นหัวใจ", emoji: "🕶️", rarity: "common", def: 1, eva: 3 },
+  { id: "m2", slot: "mask", name: "หน้ากากจิ้งจอก", emoji: "🦊", rarity: "rare", atk: 3, crit: 8, elem: "fire" },
+  { id: "g1", slot: "gloves", name: "ถุงมือขนนุ่ม", emoji: "🧤", rarity: "common", atk: 1, def: 1 },
+  { id: "g2", slot: "gloves", name: "ถุงมือนักสู้", emoji: "🥊", rarity: "epic", atk: 6, elem: "wind" },
+  { id: "gS", slot: "gloves", name: "กำปั้นเทพวายุ", emoji: "🌪️", rarity: "secret", atk: 10, def: 3, spd: 5, crit: 10, elem: "wind" },
+  { id: "p1", slot: "pants", name: "กางเกงยีนส์ฟ้า", emoji: "👖", rarity: "common", hp: 8 },
+  { id: "p2", slot: "pants", name: "กางเกงเกราะนิล", emoji: "🩹", rarity: "epic", hp: 15, def: 4, elem: "earth" },
+  { id: "s1", slot: "shoes", name: "ผ้าใบชมพูหวาน", emoji: "👟", rarity: "common", def: 2, spd: 5, eva: 4 },
+  { id: "s2", slot: "shoes", name: "บูทสายฟ้า", emoji: "⚡", rarity: "epic", def: 3, spd: 15, elem: "wind" },
+  // 🐉 THE DRAGON SET — 7 pieces, ultimate tier
+  { id: "wDw", slot: "weapon", name: "ดาบเขี้ยวมังกร", emoji: "🐉", rarity: "dragon", atk: 22, def: 6, elem: "dragon", cls: "warrior", req: 30 },
+  { id: "wDa", slot: "weapon", name: "ธนูอสูรมังกร", emoji: "🐉", rarity: "dragon", atk: 21, crit: 12, elem: "dragon", cls: "archer", req: 30 },
+  { id: "wDm", slot: "weapon", name: "คทาราชันมังกร", emoji: "🐉", rarity: "dragon", atk: 21, hp: 25, elem: "dragon", cls: "mage", req: 30 },
+  { id: "oD", slot: "outfit", name: "เกราะเกล็ดมังกร", emoji: "🐉", rarity: "dragon", hp: 70, def: 12, atk: 6, elem: "dragon" },
+  { id: "hD", slot: "hat", name: "หมวกเขามังกร", emoji: "🐉", rarity: "dragon", atk: 8, hp: 30, def: 6, elem: "dragon" },
+  { id: "mD", slot: "mask", name: "หน้ากากอสุรมังกร", emoji: "🐉", rarity: "dragon", atk: 10, def: 4, crit: 10, eva: 4, elem: "dragon" },
+  { id: "gD", slot: "gloves", name: "กรงเล็บมังกร", emoji: "🐉", rarity: "dragon", atk: 14, def: 3, elem: "dragon" },
+  { id: "pD", slot: "pants", name: "สนับเกล็ดมังกร", emoji: "🐉", rarity: "dragon", hp: 40, def: 8, elem: "dragon" },
+  { id: "sD", slot: "shoes", name: "รองเท้ามังกรเหิน", emoji: "🐉", rarity: "dragon", def: 5, spd: 20, eva: 6, crit: 5, elem: "dragon" },
+];
+const SLOT_NAMES = { weapon: "อาวุธ", outfit: "ชุด", hat: "หมวก", mask: "หน้ากาก", gloves: "ถุงมือ", pants: "กางเกง", shoes: "รองเท้า" };
+const SLOTS = Object.keys(SLOT_NAMES);
+const EMPTY_EQUIP = () => ({ weapon: null, outfit: null, hat: null, mask: null, gloves: null, pants: null, shoes: null });
+
+// ---------- Elemental skills (unlock by level) ----------
+const ELEMENTS = {
+  fire: { name: "เพลิงผลาญ", emoji: "🔥", lv: 1, color: 0xf5652e, desc: "×2.2 + เผาไหม้ 2 เทิร์น" },
+  ice: { name: "น้ำแข็งกักขัง", emoji: "❄️", lv: 3, color: 0x9adcf5, desc: "×1.6 + แช่แข็งข้ามเทิร์น" },
+  wind: { name: "พายุเฉือน", emoji: "🌪️", lv: 5, color: 0xb8e8c0, desc: "ฟันรัว 2 ครั้ง ×0.95" },
+  water: { name: "คลื่นชีวา", emoji: "💧", lv: 7, color: 0x59a0e8, desc: "×1.7 + ดูดฟื้น HP 25%" },
+  earth: { name: "กำแพงปฐพี", emoji: "🌍", lv: 9, color: 0xc09a5a, desc: "×1.5 + ป้องกัน +4 ทั้งศึก" },
+  light: { name: "แสงสวรรค์", emoji: "🌟", lv: 11, color: 0xffe9a0, desc: "×1.8 + ล้างสถานะร้าย" },
+};
+const WEAK = { mochi: "wind", baibua: "fire", mekha: "earth", plerng: "water", kirara: "ice", phi: "fire", nam: "wind", khiao: "fire", ngu: "earth", paksi: "ice", saming: "water", garuda: "light", wayu: "earth", taara: "arcane" };
+const PET_ELEM = { mochi: "wind", baibua: "earth", mekha: "water", plerng: "fire", kirara: "ice", phi: "ice", nam: "water", khiao: "wind", ngu: "earth", paksi: "wind", saming: "fire", garuda: "light", wayu: "wind", taara: "arcane" };
+const PET_SKILL = { mochi: "ลมกระต่ายหมุน", baibua: "หินใบไม้ถล่ม", mekha: "ระเบิดหยดน้ำ", plerng: "เพลิงจิ้งจอก", kirara: "ดาวน้ำแข็ง", phi: "วิญญาณเยือกแข็ง", nam: "คลื่นวารี", khiao: "ตะปบพายุ", ngu: "พ่นพิษพสุธา", paksi: "โฉบเวหา", saming: "ตะปบเพลิง", garuda: "ปีกแสงสวรรค์", wayu: "พายุหมุนเทพ", taara: "แสงจักรวาล" };
+// 🌈 element display metadata (name + emoji) for clear weakness indicators
+const ELEM_META = {
+  fire: { name: "ไฟ", emoji: "🔥" }, ice: { name: "น้ำแข็ง", emoji: "❄️" },
+  wind: { name: "ลม", emoji: "🌪️" }, water: { name: "น้ำ", emoji: "💧" },
+  earth: { name: "ดิน", emoji: "🪨" }, light: { name: "แสง", emoji: "✨" },
+  arcane: { name: "เวท", emoji: "🔮" }, dragon: { name: "มังกร", emoji: "🐉" },
+};
+
+// ---------- Character classes ----------
+const CLASSES = {
+  warrior: {
+    name: "นักรบ", emoji: "🛡️", color: 0xd9536b,
+    hp: 55, atk: 9, def: 3,
+    desc: "เลือดหนา ป้องกันสูง ฟันดาบระยะประชิด",
+    perk: "รับดาเมจลดลง -2 เพิ่มเติม",
+  },
+  archer: {
+    name: "นักธนู", emoji: "🏹", color: 0x7ba05b,
+    hp: 42, atk: 10, def: 1,
+    desc: "ยิงธนูจากระยะไกล แม่นยำสูง",
+    perk: "โอกาสคริติคอล 25% แรง ×2 🎯",
+  },
+  mage: {
+    name: "นักเวท", emoji: "🔮", color: 0x9a6ad0,
+    hp: 36, atk: 8, def: 0,
+    desc: "ร่ายเวทลูกแก้วอาคม พลังทำลายสูง",
+    perk: "สกิลแรง ×1.15 · พลังสกิลเริ่ม +2",
+  },
+  assassin: {
+    name: "นักฆ่า", emoji: "🗡️", color: 0x4a4a5a,
+    hp: 40, atk: 8, def: 1,
+    desc: "มีดสั้นคู่ จู่โจมสองมือรวดเร็ว",
+    perk: "โจมตี 2 ครั้ง · คริ 30% · หลบ +12%",
+  },
+  lancer: {
+    name: "นักหอก", emoji: "🔱", color: 0x4a90c0,
+    hp: 50, atk: 9, def: 2,
+    desc: "หอกยาวจ้วงระยะกลาง เจาะเกราะทะลุ",
+    perk: "โจมตีทะลุการ์ด/บล็อก · เจาะเกราะ -2 DEF ศัตรู",
+  },
+  samurai: {
+    name: "ซามูไร", emoji: "⚔️", color: 0xc0392b,
+    hp: 46, atk: 11, def: 1,
+    desc: "ดาบคาตานะเร็วดุ ฟันติดต่อกันคมกริบ",
+    perk: "คริ 22% · โจมตีปกติมีโอกาสฟัน 2 ครั้ง",
+  },
+};
+const CLASS_WEAPON = { warrior: "cw", archer: "ca", mage: "cm", assassin: "cs", lancer: "cl", samurai: "ck" };
+const ULTS = {
+  warrior: { name: "เพลงดาบพันภพ", emoji: "🌪️⚔️", desc: "ฟันหมุน 3 ครั้ง ×0.9 + ป้องกัน +3" },
+  archer: { name: "ฝนธนูพันดอก", emoji: "🏹", desc: "ธนู 5 ดอกร่วงจากฟ้า ×0.55 การันตีคริ 1 ดอก" },
+  mage: { name: "อุกกาบาตอาคม", emoji: "☄️", desc: "ดาเมจมหาศาล ×3.2 + เผาไหม้ 2 เทิร์น" },
+  assassin: { name: "รัวมีดพันครั้ง", emoji: "🗡️💠", desc: "แทงรัว 6 ครั้ง ×0.5 · คริทุกครั้ง" },
+  lancer: { name: "พายุหอกทะลวง", emoji: "🔱💥", desc: "พุ่งหอกทะลุ 4 ครั้ง ×0.8 · เจาะเกราะทั้งหมด" },
+  samurai: { name: "นกนางแอ่นหวนกลับ", emoji: "⚔️🕊️", desc: "ฟันดิ่งลงแล้วหวนกลับขึ้นเร็วปานนก ×2.8 · คริการันตี 3 ครั้ง" },
+};
+// 🎯 4 signature skills per class — each level up gives 5 skill points to rank them up (max Lv.20)
+// dmg = base attack × (mult + perLv×(rank-1)); each skill costs "cost" mana 💧
+const CLASS_SKILLS = {
+  warrior: [
+    { id: "w_cleave", cost: 8, name: "ฟันวงกว้าง", emoji: "🌙", color: 0xd9536b, mult: 1.6, perLv: 0.35, fx: "slash", desc: "ฟันดาบวงโค้งใส่ศัตรู" },
+    { id: "w_bash", cost: 6, name: "โล่กระแทก", emoji: "🛡️", color: 0xc09a5a, mult: 1.2, perLv: 0.25, buffDef: 3, fx: "bash", desc: "กระแทกโล่ + ป้องกัน" },
+    { id: "w_rage", cost: 12, name: "คลั่งสงคราม", emoji: "🔥", color: 0xf5652e, mult: 2.0, perLv: 0.45, fx: "rage", desc: "ดาเมจหนัก ยิ่งเลือดน้อยยิ่งแรง" },
+    { id: "w_quake", cost: 10, name: "ปฐพีแยก", emoji: "🌍", color: 0x8a6a3a, mult: 1.8, perLv: 0.4, stun: true, fx: "quake", desc: "ทุบพื้นสะเทือน มีโอกาสมึน" },
+  ],
+  archer: [
+    { id: "a_power", cost: 9, name: "ธนูเจาะเกราะ", emoji: "🎯", color: 0x59a0e8, mult: 1.7, perLv: 0.4, pierce: true, fx: "shot", desc: "ยิงทะลุการ์ด/บล็อก" },
+    { id: "a_multi", cost: 10, name: "ยิงสามทิศ", emoji: "🏹", color: 0x7ba05b, mult: 0.7, perLv: 0.18, hits: 3, stun: true, fx: "multi", desc: "ยิง 3 ดอกรวด มีโอกาสมึนงง 💫" },
+    { id: "a_poison", cost: 8, name: "ลูกศรพิษ", emoji: "🐍", color: 0x9a4ad0, mult: 1.3, perLv: 0.3, poison: 3, fx: "shot", desc: "ลูกศรพิษม่วง ติดพิษ 3 เทิร์น 🫧" },
+    { id: "a_snipe", cost: 11, name: "ยิงจุดตาย", emoji: "💥", color: 0xf5a623, mult: 1.5, perLv: 0.5, critBonus: 0.5, burn: 2, fx: "shot", desc: "ลูกธนูเพลิง คริสูง + เผาไหม้ 🔥" },
+  ],
+  mage: [
+    { id: "m_fire", cost: 9, name: "เพลิงนรก", emoji: "🔥", color: 0xf5652e, mult: 1.8, perLv: 0.4, burn: 2, fx: "orb", desc: "ลูกไฟ + เผาไหม้" },
+    { id: "m_ice", cost: 9, name: "หอกน้ำแข็ง", emoji: "❄️", color: 0x9adcf5, mult: 1.6, perLv: 0.38, freeze: true, fx: "orb", desc: "แช่แข็งข้ามเทิร์น" },
+    { id: "m_bolt", cost: 12, name: "สายฟ้าฟาด", emoji: "⚡", color: 0xf5e042, mult: 2.0, perLv: 0.45, fx: "bolt", desc: "สายฟ้าดาเมจสูง" },
+    { id: "m_heal", cost: 10, name: "แสงเยียวยา", emoji: "✨", color: 0xffe9a0, mult: 1.0, perLv: 0.2, heal: 0.4, fx: "heal", desc: "ตี + ฟื้น HP ตัวเอง 15%+ ตามระดับ" },
+  ],
+  assassin: [
+    { id: "s_double", cost: 7, name: "รัวมีดคู่", emoji: "🗡️", color: 0xd9536b, mult: 0.9, perLv: 0.22, hits: 2, bleed: 3, fx: "stab", desc: "กระหน่ำแทงมีดคู่ ติดเลือดไหล 🩸" },
+    { id: "s_poison", cost: 9, name: "มีดอาบยาพิษ", emoji: "☠️", color: 0x9a4ad0, mult: 0.55, perLv: 0.14, hits: 3, poison: 3, fx: "stab", desc: "ปามีดพิษ 3 เล่ม โอกาสติดพิษม่วง 🟣" },
+    { id: "s_shadow", cost: 13, name: "ลอบสังหาร", emoji: "🌑", color: 0x4a4a5a, mult: 2.2, perLv: 0.5, critBonus: 1.0, fx: "shadow", desc: "หายตัวไปข้างหลัง โจมตีติดคริแน่นอน 🎯" },
+    { id: "s_evade", cost: 8, name: "ระบำเงา", emoji: "💨", color: 0xb8e8c0, mult: 0.45, perLv: 0.11, hits: 4, buffEva: true, fx: "stab", desc: "ฟันรัวซ้ายขวาเป็นเงาวาบ + เพิ่มหลบ 💨" },
+  ],
+  lancer: [
+    { id: "l_thrust", cost: 6, name: "จ้วงทะลวง", emoji: "🔱", color: 0x4a90c0, mult: 1.3, perLv: 0.3, pierce: true, fx: "pierce", desc: "แทงทะลุการ์ด" },
+    { id: "l_sweep", cost: 9, name: "กวาดหอก", emoji: "🌪️", color: 0x6ab0d0, mult: 1.2, perLv: 0.26, hits: 2, fx: "pierce", desc: "กวาด 2 ครั้ง ทะลุ" },
+    { id: "l_quake", cost: 11, name: "หอกปฐพี", emoji: "🌍", color: 0x8a6a3a, mult: 1.7, perLv: 0.36, stun: true, fx: "quake", desc: "กระแทกพื้น + ทำสตัน" },
+    { id: "l_charge", cost: 13, name: "พุ่งทะยาน", emoji: "💥", color: 0x4a90c0, mult: 2.3, perLv: 0.5, pierce: true, fx: "pierce", desc: "พุ่งหอกทะลุแรงสุด" },
+  ],
+  samurai: [
+    { id: "k_slash", cost: 6, name: "ฟันเฉียง", emoji: "⚔️", color: 0xc0392b, mult: 1.4, perLv: 0.32, fx: "slash", desc: "ฟันคมกริบ" },
+    { id: "k_double", cost: 9, name: "ดาบคู่ฟ้า", emoji: "🌸", color: 0xe0708a, mult: 1.1, perLv: 0.26, hits: 2, critBonus: 0.2, fx: "slash", desc: "ฟัน 2 ครั้ง คริสูง" },
+    { id: "k_iai", cost: 12, name: "ชักดาบสายฟ้า", emoji: "⚡", color: 0xf5c542, mult: 2.0, perLv: 0.44, critBonus: 0.3, fx: "bolt", desc: "ชักดาบเร็วปานสายฟ้า" },
+    { id: "k_moon", cost: 13, name: "เพลงดาบจันทรา", emoji: "🌙", color: 0xc0392b, mult: 2.4, perLv: 0.5, fx: "slash", desc: "วิถีดาบสุดคม" },
+  ],
+};
+// which element each skill counts as (for weakness advantage). null = neutral
+const SKILL_ELEM = {
+  w_cleave: null, w_bash: null, w_rage: "fire", w_quake: "earth",
+  a_power: null, a_multi: "wind", a_poison: "earth", a_snipe: null,
+  m_fire: "fire", m_ice: "ice", m_bolt: "wind", m_heal: "light",
+  s_double: null, s_poison: "earth", s_shadow: null, s_evade: "wind",
+  l_thrust: null, l_sweep: "wind", l_quake: "earth", l_charge: null,
+  k_slash: null, k_double: null, k_iai: "wind", k_moon: null,
+};
+
+// ---------- 🎀 Character customization options ----------
+const CUSTOM = {
+  genders: [
+    { n: "หญิง", emoji: "👧" },
+    { n: "ชาย", emoji: "👦" },
+  ],
+  skins: [
+    { n: "ขาวธรรมชาติ", c: 0xffe0c8 }, { n: "น้ำผึ้ง", c: 0xe8b28a },
+    { n: "แทนเข้ม", c: 0xc98e62 }, { n: "ครีมนวล", c: 0xf7dcc4 },
+  ],
+  hairColors: [
+    { n: "น้ำตาล", c: 0x5a3b26 }, { n: "ดำขลับ", c: 0x2a2226 }, { n: "บลอนด์", c: 0xd9b56a },
+    { n: "ชมพูซากุระ", c: 0xf2a0b4 }, { n: "ฟ้าพาสเทล", c: 0x6a9ad0 },
+  ],
+  hairStyles: ["ยาวประบ่า", "บ๊อบสั้น", "หางม้าคู่", "หางม้าสูง", "บ๊อบติดเขาดำ 🖤", "บ๊อบตรง", "ยาวตรงหน้าม้า", "เปียโบว์กระต่าย 🎀", "มวยผมหน้าม้า"],
+  eyes: ["กลมใส", "โตประกาย", "ยิ้มหวาน", "ประกายดาวเขียว ✨"],
+  outfits: [
+    { n: "ลายทางกรม", base: "#33415e", stripe: "#dfe6f2", pants: 0xf7f5f0 },
+    { n: "ชมพูหวาน", base: "#e8879e", stripe: "#ffe3ec", pants: 0xfff5f8 },
+    { n: "มิ้นต์สดชื่น", base: "#4f9a7d", stripe: "#dff5ea", pants: 0xf2efe6 },
+    { n: "ดำสุดเท่", base: "#3a3a44", stripe: "#8a8a98", pants: 0x52525c },
+    { n: "เดรสดำขลิบทอง", base: "#2b2724", stripe: "#c9a24a", pants: 0xf5f2ec, collar: true },
+  ],
+};
+const WEAPON_TIP = { w1: 0xf28ba8, w2: 0xf5652e, w3: 0x7ad0e8, wS: 0xcfe0ff };
+const rollRarity = (boss) => {
+  const r = Math.random();
+  if (boss) return r < 0.05 ? "dragon" : r < 0.18 ? "secret" : r < 0.65 ? "epic" : "rare"; // boss = big loot
+  return r < 0.003 ? "dragon" : r < 0.013 ? "secret" : r < 0.12 ? "epic" : r < 0.45 ? "rare" : "common";
+};
+const BOSS_LEVELS_STEP = 5; // bosses at 10, 15, 20, ...
+
+export default function CherryAdventure() {
+  const mountRef = useRef(null);
+  const gameRef = useRef({});
+  const [ui, setUi] = useState({
+    mode: "title", // title | create | explore | battle | fainted
+    slots: [null, null, null], saveSlot: 0, confirmDelete: null, playerName: "เชอร์รี่", playerTitle: "", pendingName: "",
+    cls: null,
+    hp: 40, maxHp: 40, level: 1, exp: 0, expNext: 50,
+    atk: 8, def: 0, skillPts: 0,
+    balls: 3, specials: 2,
+    enemy: null, // {id,name,emoji,hp,maxHp,lv}
+    bstate: "choose", // choose | busy
+    msg: "", col: {}, pets: {}, buddy: null, panelOpen: false, skillMenu: false, auto: false, ultUsed: false, dayPhase: "",
+    custom: { gender: 0, skin: 0, hairColor: 0, hairStyle: 0, eyes: 0, outfit: 0 }, customTab: "gender",
+    inv: [], equip: { weapon: null, outfit: null, hat: null, mask: null, gloves: null, pants: null, shoes: null }, invOpen: false, plus: {}, potions: 1, mpPotions: 1, mp: 50, maxMp: 50, sortMode: "rarity", hasSave: null,
+    gold: 80, shop: [], shopOpen: false,
+    eventMsg: "", eventLeft: 0, dungeonAsk: false, dungeonFloor: 0, dungeonProgress: 1, quests: [], questOpen: false,
+    warpAsk: false, biomeName: "🌸 ทุ่งซากุระ", biomeIdx: 0, soundOn: true, musicOn: true, fishing: null, pondNear: false, skillPanel: false, sp: 0, skillRanks: {}, skillCap: 1, ultRank: 1, ultSkillSum: 0, sellPriority: SLOTS.slice(), sellSetup: false, statPts: 0, baseStats: {}, battleSpeed: 1, dexTab: false, achTab: false, achUnlocked: {}, combo: 0, homeOpen: false, team: [], petSp: 0, petSkillLv: {}, fuseA: null, fuseB: null, tutStep: null, ngPlus: 0, npcNear: false, npcTalk: null, storyChapter: 0,
+    toast: "", toastAt: 0,
+  });
+
+  // joystick
+  const joyRef = useRef(null);
+  const knobRef = useRef(null);
+  const joyOn = useRef(false);
+  const moveKnob = (cx0, cy0) => {
+    const el = joyRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+    let dx = cx0 - cx, dy = cy0 - cy;
+    const max = rect.width / 2 - 22;
+    const len = Math.hypot(dx, dy);
+    if (len > max) { dx = (dx / len) * max; dy = (dy / len) * max; }
+    if (knobRef.current) knobRef.current.style.transform = `translate(${dx}px, ${dy}px)`;
+    gameRef.current.joy = { x: dx / max, y: dy / max };
+  };
+  const joyStart = (e) => { joyOn.current = true; e.currentTarget.setPointerCapture(e.pointerId); moveKnob(e.clientX, e.clientY); };
+  const joyMove = (e) => { if (joyOn.current) moveKnob(e.clientX, e.clientY); };
+  const joyEnd = () => {
+    joyOn.current = false;
+    gameRef.current.joy = { x: 0, y: 0 };
+    if (knobRef.current) knobRef.current.style.transform = "translate(0px, 0px)";
+  };
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    const W = mount.clientWidth, H = mount.clientHeight;
+    const G = gameRef.current;
+    G.joy = { x: 0, y: 0 };
+    G.keys = {};
+
+    // ---------- 🎵 Audio (synthesized — no files, works offline) ----------
+    let actx = null;
+    const initAudio = () => {
+      if (actx) return;
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; }
+    };
+    G.soundOn = true;
+    G.musicOn = true;
+    // one-shot blip: freq(s), type, duration, gain
+    const sfx = (freqs, type = "sine", dur = 0.12, gain = 0.18, slide = 0) => {
+      if (!actx || !G.soundOn) return;
+      const now = actx.currentTime;
+      (Array.isArray(freqs) ? freqs : [freqs]).forEach((f, i) => {
+        const o = actx.createOscillator();
+        const g = actx.createGain();
+        o.type = type;
+        o.frequency.setValueAtTime(f, now + i * 0.05);
+        if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, f + slide), now + i * 0.05 + dur);
+        g.gain.setValueAtTime(gain, now + i * 0.05);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.05 + dur);
+        o.connect(g); g.connect(actx.destination);
+        o.start(now + i * 0.05); o.stop(now + i * 0.05 + dur + 0.02);
+      });
+    };
+    // named sound effects
+    G.sfx = {
+      slash: () => sfx([520, 320], "sawtooth", 0.1, 0.14, -180),
+      hit: () => sfx([180, 120], "square", 0.09, 0.12, -60),
+      crit: () => sfx([700, 900, 1200], "sawtooth", 0.09, 0.13),
+      catch: () => sfx([440, 660, 880, 1100], "sine", 0.11, 0.16),
+      win: () => sfx([523, 659, 784, 1047], "triangle", 0.15, 0.16),
+      lose: () => sfx([330, 262, 196], "sine", 0.22, 0.16, -40),
+      levelup: () => sfx([523, 659, 784, 1047, 1319], "triangle", 0.16, 0.17),
+      button: () => sfx([600], "sine", 0.05, 0.08),
+      coin: () => sfx([880, 1320], "square", 0.07, 0.1),
+      warp: () => sfx([300, 500, 800, 1200], "sine", 0.12, 0.14, 200),
+      splash: () => sfx([400, 250], "sine", 0.18, 0.14, -120),
+      reel: () => sfx([700, 500, 700, 500], "triangle", 0.08, 0.1),
+      fish: () => sfx([660, 880, 1100, 1320], "sine", 0.12, 0.16),
+    };
+    // gentle background music loop (soft arpeggio)
+    let musicTimer = null;
+    const notesDay = [523, 587, 659, 784, 659, 587]; // major, cheerful
+    const notesNight = [440, 523, 587, 494, 440, 392]; // softer
+    let musicStep = 0;
+    const playMusicNote = () => {
+      if (!actx || !G.musicOn) return;
+      const night = G.dayPhaseAmt != null && G.dayPhaseAmt < 0.35;
+      const scale = night ? notesNight : notesDay;
+      const f = scale[musicStep % scale.length];
+      musicStep++;
+      const now = actx.currentTime;
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = "triangle";
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.05, now); // quiet background
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+      o.connect(g); g.connect(actx.destination);
+      o.start(now); o.stop(now + 0.55);
+      // occasional bass
+      if (musicStep % 3 === 0) {
+        const ob = actx.createOscillator(), gb = actx.createGain();
+        ob.type = "sine"; ob.frequency.value = f / 2;
+        gb.gain.setValueAtTime(0.04, now);
+        gb.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+        ob.connect(gb); gb.connect(actx.destination);
+        ob.start(now); ob.stop(now + 0.62);
+      }
+    };
+    const startMusic = () => {
+      if (musicTimer) return;
+      musicTimer = setInterval(playMusicNote, 480);
+    };
+    G.toggleSound = () => { G.soundOn = !G.soundOn; setUi((u) => ({ ...u, soundOn: G.soundOn })); if (G.soundOn) { initAudio(); G.sfx.button(); } };
+    G.toggleMusic = () => { G.musicOn = !G.musicOn; setUi((u) => ({ ...u, musicOn: G.musicOn })); if (G.musicOn) { initAudio(); startMusic(); } };
+    // unlock audio on first interaction (browser autoplay policy)
+    const unlockAudio = () => {
+      initAudio();
+      if (actx && actx.state === "suspended") actx.resume();
+      startMusic();
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+    };
+    window.addEventListener("pointerdown", unlockAudio);
+    window.addEventListener("keydown", unlockAudio);
+
+    // ---------- Scene ----------
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf0fae2);
+    scene.fog = new THREE.Fog(0xf0fae2, 30, 78);
+
+    const camera = new THREE.PerspectiveCamera(42, W / H, 0.1, 100);
+    let camDist = 8; // explore zoom 6..24 (also drives creator zoom)
+    let bZoom = 1; // battle zoom factor 0.6..1.8
+    const saveZoom = () => {
+      try { window.localStorage.setItem("cherry-zoom", JSON.stringify({ camDist, bZoom })); } catch (e) {}
+    };
+    try {
+      const z = JSON.parse(window.localStorage.getItem("cherry-zoom") || "null");
+      if (z) { camDist = z.camDist || camDist; bZoom = z.bZoom || bZoom; }
+    } catch (e) {}
+    G.zoom = (d) => {
+      if (G.mode === "battle" || G.mode === "fainted") {
+        bZoom = Math.min(1.8, Math.max(0.6, bZoom + d * 0.09));
+      } else if (G.mode === "create") {
+        camDist = Math.min(14, Math.max(5.2, camDist + d)); // ซูมหน้าแต่งตัว
+      } else {
+        camDist = Math.min(24, Math.max(6, camDist + d));
+      }
+      saveZoom(); // 🔍 remember zoom level
+    };
+    camera.position.set(0, 8.5, 11);
+    camera.lookAt(0, 0.8, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(W, H);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3)); // คมชัดขึ้น
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    mount.appendChild(renderer.domElement);
+
+    const amb = new THREE.AmbientLight(0xffffff, 0.38);
+    scene.add(amb);
+    // sky/ground bounce light for softer, more realistic shading
+    const hemi = new THREE.HemisphereLight(0xfff6e6, 0x8aa878, 0.5);
+    scene.add(hemi);
+    const key = new THREE.DirectionalLight(0xfff8e8, 0.85);
+    key.position.set(6, 11, 7);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.radius = 5; // softer shadow edges
+    key.shadow.camera.left = -12; key.shadow.camera.right = 12;
+    key.shadow.camera.top = 12; key.shadow.camera.bottom = -12;
+    scene.add(key);
+
+    // ---------- 🌗 Day / Night cycle ----------
+    const DAY_CYCLE = 120; // seconds per full day
+    const dayColors = {
+      skyDay: new THREE.Color(0xf0fae2), skyNight: new THREE.Color(0x1c2440),
+      sunDay: new THREE.Color(0xfff8e8), sunNight: new THREE.Color(0x8fa8e0), // moonlight blue
+      hemiSkyDay: new THREE.Color(0xfff6e6), hemiSkyNight: new THREE.Color(0x3a4a7a),
+    };
+    const skyTmp = new THREE.Color();
+    const windowMats = []; // cottage windows glow at night
+    // stars (fade in at night)
+    const starMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 });
+    for (let i = 0; i < 60; i++) {
+      const st = new THREE.Mesh(new THREE.SphereGeometry(0.06 + Math.random() * 0.05, 6, 6), starMat);
+      const a = Math.random() * Math.PI * 2, r2 = 22 + Math.random() * 20;
+      st.position.set(Math.cos(a) * r2, 12 + Math.random() * 18, Math.sin(a) * r2);
+      scene.add(st);
+    }
+    // fireflies (night only)
+    const fireflies = [];
+    for (let i = 0; i < 14; i++) {
+      const f = new THREE.Mesh(
+        new THREE.SphereGeometry(0.05, 6, 6),
+        new THREE.MeshBasicMaterial({ color: 0xd8f57a, transparent: true, opacity: 0 })
+      );
+      f.userData = { a: Math.random() * Math.PI * 2, r: 3 + Math.random() * 11, sp: 0.2 + Math.random() * 0.4, ph: Math.random() * 6 };
+      scene.add(f);
+      fireflies.push(f);
+    }
+
+    // 🎨 vividness pass — gently boosts saturation & brightness of materials
+    const vivify = (root) => {
+      root.traverse((o) => {
+        if (o.isMesh && o.material && o.material.color && !o.material.userData.vivid) {
+          o.material.userData.vivid = true;
+          const hsl = { h: 0, s: 0, l: 0 };
+          o.material.color.getHSL(hsl);
+          o.material.color.setHSL(hsl.h, Math.min(1, hsl.s * 1.2 + 0.03), hsl.l); // สดแต่ไม่จ้า
+        }
+      });
+    };
+
+    // ---------- World: big meadow ----------
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(50, 56),
+      new THREE.MeshStandardMaterial({ color: 0xa8c98a, roughness: 1 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const FIELD_R = 16; // much bigger playable field
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(FIELD_R - 0.08, FIELD_R + 0.08, 72),
+      new THREE.MeshBasicMaterial({ color: 0x7ba05b, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.012;
+    scene.add(ring);
+
+    // ---------- World decorations + colliders ----------
+    const colliders = []; // { x, z, r } — solid objects
+    const sceneryObjects = []; // 🌳 trees/bushes/rocks we can hide during battle so they don't block the view
+    G.sceneryObjects = sceneryObjects;
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    // 🧭 all obstacles in play right now = fixed scenery + the current biome's decor
+    G.biomeColliders = [];
+    const activeColliders = () => G.biomeColliders && G.biomeColliders.length ? colliders.concat(G.biomeColliders) : colliders;
+    G.activeColliders = activeColliders;
+    const pushOut = (obj, extra = 0.4) => {
+      for (const c of (G.activeColliders ? G.activeColliders() : colliders)) {
+        const dx = obj.position.x - c.x, dz = obj.position.z - c.z;
+        const d = Math.hypot(dx, dz);
+        const min = c.r + extra;
+        if (d < min && d > 0.0001) {
+          obj.position.x = c.x + (dx / d) * min;
+          obj.position.z = c.z + (dz / d) * min;
+        }
+      }
+    };
+
+    const addTree = (x, z, pink = false) => {
+      const g = new THREE.Group();
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.16, 0.24, rnd(1.1, 1.6), 8),
+        new THREE.MeshStandardMaterial({ color: 0x8a6a4a })
+      );
+      trunk.position.y = 0.7;
+      trunk.castShadow = true;
+      g.add(trunk);
+      const col = pink ? 0xf3a0b5 : [0x6fae5f, 0x5f9a50, 0x7fbe6a][Math.floor(Math.random() * 3)];
+      for (let i = 0; i < 3; i++) {
+        const crown = new THREE.Mesh(
+          new THREE.SphereGeometry(rnd(0.55, 0.95), 12, 12),
+          new THREE.MeshStandardMaterial({ color: col, roughness: 0.9 })
+        );
+        crown.position.set(rnd(-0.3, 0.3), rnd(1.5, 2.3), rnd(-0.3, 0.3));
+        crown.castShadow = true;
+        g.add(crown);
+      }
+      g.position.set(x, 0, z);
+      scene.add(g);
+      sceneryObjects.push(g);
+      colliders.push({ x, z, r: 0.45 });
+    };
+    const addDeadTree = (x, z) => {
+      const g = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({ color: 0x6a5240, roughness: 0.95 });
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.2, rnd(1.7, 2.3), 7), mat);
+      trunk.position.y = 1.0;
+      trunk.rotation.z = rnd(-0.1, 0.1);
+      trunk.castShadow = true;
+      g.add(trunk);
+      for (let i = 0; i < 4; i++) {
+        const br = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.07, rnd(0.6, 1.1), 6), mat);
+        br.position.set(rnd(-0.2, 0.2), rnd(1.2, 2.0), rnd(-0.2, 0.2));
+        br.rotation.set(rnd(-0.9, 0.9), rnd(0, 6), rnd(-0.9, 0.9));
+        br.castShadow = true;
+        g.add(br);
+      }
+      g.position.set(x, 0, z);
+      scene.add(g);
+      sceneryObjects.push(g);
+      colliders.push({ x, z, r: 0.35 });
+    };
+    const addBush = (x, z, berry = false) => {
+      const g = new THREE.Group();
+      const col = [0x5f9a50, 0x6fae5f][Math.floor(Math.random() * 2)];
+      for (let i = 0; i < 4; i++) {
+        const b = new THREE.Mesh(
+          new THREE.SphereGeometry(rnd(0.22, 0.4), 10, 10),
+          new THREE.MeshStandardMaterial({ color: col, roughness: 0.95 })
+        );
+        b.position.set(rnd(-0.3, 0.3), rnd(0.15, 0.35), rnd(-0.3, 0.3));
+        b.castShadow = true;
+        g.add(b);
+      }
+      if (berry) {
+        for (let i = 0; i < 5; i++) {
+          const be = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 6), new THREE.MeshStandardMaterial({ color: 0xd9333f }));
+          be.position.set(rnd(-0.4, 0.4), rnd(0.25, 0.5), rnd(-0.4, 0.4));
+          g.add(be);
+        }
+      }
+      g.position.set(x, 0, z);
+      scene.add(g);
+      sceneryObjects.push(g);
+      colliders.push({ x, z, r: 0.32 });
+    };
+    const addHouse = (x, z, rotY = 0) => {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(2.6, 1.7, 2.0),
+        new THREE.MeshStandardMaterial({ color: 0xf1e2c8, roughness: 0.9 })
+      );
+      body.position.y = 0.85;
+      body.castShadow = true;
+      g.add(body);
+      const roof = new THREE.Mesh(
+        new THREE.ConeGeometry(2.15, 1.15, 4),
+        new THREE.MeshStandardMaterial({ color: 0xb0524a, roughness: 0.8 })
+      );
+      roof.position.y = 2.28;
+      roof.rotation.y = Math.PI / 4;
+      roof.castShadow = true;
+      g.add(roof);
+      const door = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.95, 0.06), new THREE.MeshStandardMaterial({ color: 0x7a5230 }));
+      door.position.set(0, 0.48, 1.03);
+      g.add(door);
+      for (const wx of [-0.85, 0.85]) {
+        const winMat = new THREE.MeshStandardMaterial({ color: 0x9ec3ef, emissive: 0xf5c542, emissiveIntensity: 0.15 });
+        const win = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.06), winMat);
+        win.position.set(wx, 1.05, 1.03);
+        g.add(win);
+        windowMats.push(winMat);
+      }
+      const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.7, 0.3), new THREE.MeshStandardMaterial({ color: 0x8a8a88 }));
+      chimney.position.set(0.8, 2.4, -0.4);
+      g.add(chimney);
+      g.position.set(x, 0, z);
+      g.rotation.y = rotY;
+      scene.add(g);
+      colliders.push({ x, z, r: 2.0 });
+    };
+    const addWell = (x, z) => {
+      const g = new THREE.Group();
+      const stone = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.6, 0.66, 0.7, 12),
+        new THREE.MeshStandardMaterial({ color: 0x8a8a88, roughness: 0.95 })
+      );
+      stone.position.y = 0.35;
+      stone.castShadow = true;
+      g.add(stone);
+      const water = new THREE.Mesh(
+        new THREE.CircleGeometry(0.5, 12),
+        new THREE.MeshStandardMaterial({ color: 0x59a0e8, roughness: 0.15 })
+      );
+      water.rotation.x = -Math.PI / 2;
+      water.position.y = 0.71;
+      g.add(water);
+      for (const px of [-0.55, 0.55]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.1, 6), new THREE.MeshStandardMaterial({ color: 0x7a5230 }));
+        post.position.set(px, 0.9, 0);
+        g.add(post);
+      }
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(0.9, 0.5, 4), new THREE.MeshStandardMaterial({ color: 0xb0524a }));
+      roof.position.y = 1.65;
+      roof.rotation.y = Math.PI / 4;
+      roof.castShadow = true;
+      g.add(roof);
+      g.position.set(x, 0, z);
+      scene.add(g);
+      colliders.push({ x, z, r: 0.95 });
+    };
+    const addRuin = (x, z) => {
+      const g = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({ color: 0xa8a8a0, roughness: 0.95 });
+      for (let i = 0; i < 5; i++) {
+        const h = rnd(0.4, 1.7);
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.21, h, 8), mat);
+        const a = (i / 5) * Math.PI * 2;
+        p.position.set(Math.cos(a) * 1.0, h / 2, Math.sin(a) * 1.0);
+        p.rotation.z = rnd(-0.12, 0.12);
+        p.castShadow = true;
+        g.add(p);
+      }
+      const fallen = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 1.3, 8), mat);
+      fallen.rotation.z = Math.PI / 2;
+      fallen.position.set(0.3, 0.18, 0.2);
+      g.add(fallen);
+      g.position.set(x, 0, z);
+      scene.add(g);
+      colliders.push({ x, z, r: 1.3 });
+    };
+    const addFence = (x, z, rotY, count = 5) => {
+      const g = new THREE.Group();
+      const wood = new THREE.MeshStandardMaterial({ color: 0x9a7248, roughness: 0.9 });
+      for (let i = 0; i < count; i++) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.7, 0.09), wood);
+        post.position.set(i * 0.7, 0.35, 0);
+        g.add(post);
+      }
+      const rail = new THREE.Mesh(new THREE.BoxGeometry((count - 1) * 0.7 + 0.12, 0.07, 0.06), wood);
+      rail.position.set(((count - 1) * 0.7) / 2, 0.52, 0);
+      const rail2 = rail.clone();
+      rail2.position.y = 0.26;
+      g.add(rail, rail2);
+      g.position.set(x, 0, z);
+      g.rotation.y = rotY;
+      scene.add(g);
+    };
+    const addSign = (x, z) => {
+      const g = new THREE.Group();
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1.0, 6), new THREE.MeshStandardMaterial({ color: 0x7a5230 }));
+      post.position.y = 0.5;
+      const board = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.42, 0.06), new THREE.MeshStandardMaterial({ color: 0xc9a06a }));
+      board.position.y = 0.95;
+      board.rotation.y = 0.3;
+      g.add(post, board);
+      g.position.set(x, 0, z);
+      scene.add(g);
+    };
+
+    // ----- place everything (center stays clear for spawning) -----
+    addHouse(-10.5, -8, 0.5); // cottage in the northwest
+    // 👤 story NPC: village elder near the cottage
+    const npc = new THREE.Group();
+    {
+      const robe = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.1, 12), new THREE.MeshStandardMaterial({ color: 0x6a8ac0 }));
+      robe.position.y = 0.55;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 16), new THREE.MeshStandardMaterial({ color: 0xf2d0b0 }));
+      head.position.y = 1.28;
+      const hat = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.5, 12), new THREE.MeshStandardMaterial({ color: 0x4a6aa0 }));
+      hat.position.y = 1.62;
+      const beard = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.4, 8), new THREE.MeshStandardMaterial({ color: 0xf0f0f0 }));
+      beard.position.set(0, 1.1, 0.16); beard.rotation.x = 0.2;
+      npc.add(robe, head, hat, beard);
+      // exclamation marker floating above
+      const markCanvas = document.createElement("canvas"); markCanvas.width = 64; markCanvas.height = 64;
+      const mctx = markCanvas.getContext("2d");
+      mctx.font = "bold 48px system-ui"; mctx.textAlign = "center"; mctx.textBaseline = "middle";
+      mctx.fillStyle = "#f5c542"; mctx.strokeStyle = "#8a5a10"; mctx.lineWidth = 4;
+      mctx.strokeText("!", 32, 32); mctx.fillText("!", 32, 32);
+      const markTex = new THREE.CanvasTexture(markCanvas);
+      const mark = new THREE.Sprite(new THREE.SpriteMaterial({ map: markTex, transparent: true, depthTest: false }));
+      mark.scale.set(0.5, 0.5, 1); mark.position.y = 2.1;
+      npc.add(mark);
+      npc.userData.mark = mark;
+      npc.position.set(-8.5, 0, -7);
+      scene.add(npc);
+      colliders.push({ x: -8.5, z: -7, r: 0.5 });
+      G.npc = npc;
+      G.npcPos = { x: -8.5, z: -7 };
+    }
+    addWell(9.5, -9); // stone well in the northeast
+    // 🎣 fishing pond (southwest)
+    {
+      const pondG = new THREE.Group();
+      const water = new THREE.Mesh(
+        new THREE.CircleGeometry(2.2, 32),
+        new THREE.MeshStandardMaterial({ color: 0x4a90c0, transparent: true, opacity: 0.85, roughness: 0.2, metalness: 0.3 })
+      );
+      water.rotation.x = -Math.PI / 2;
+      water.position.y = 0.05;
+      pondG.add(water);
+      // stone rim
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        const rock = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), new THREE.MeshStandardMaterial({ color: 0x9a9a92, roughness: 0.9 }));
+        rock.scale.set(1, 0.6, 1);
+        rock.position.set(Math.cos(a) * 2.3, 0.1, Math.sin(a) * 2.3);
+        pondG.add(rock);
+      }
+      // cattails
+      for (let i = 0; i < 5; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.8, 5), new THREE.MeshStandardMaterial({ color: 0x5a8a45 }));
+        stem.position.set(Math.cos(a) * 2.1, 0.4, Math.sin(a) * 2.1);
+        pondG.add(stem);
+        const top = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.22, 6), new THREE.MeshStandardMaterial({ color: 0x8a5a2a }));
+        top.position.set(Math.cos(a) * 2.1, 0.85, Math.sin(a) * 2.1);
+        pondG.add(top);
+      }
+      pondG.position.set(-10, 0, -10.5);
+      scene.add(pondG);
+      colliders.push({ x: -10, z: -10.5, r: 2.5 });
+      G.pondPos = { x: -10, z: -10.5 };
+      G.pondWater = water;
+    }
+    addRuin(-9.5, 9.5); // ancient ruins in the southwest
+    addSign(1.4, -2.6);
+    addFence(-12.8, -5.2, 0.45);
+    addFence(7.0, -11.2, -0.5);
+    addFence(-7.6, 11.6, 1.1);
+    addFence(11.5, 6.5, 2.1);
+    // living trees inside the field
+    for (let i = 0; i < 16; i++) {
+      const a = rnd(0, Math.PI * 2), r = rnd(5, FIELD_R - 1.2);
+      addTree(Math.cos(a) * r, Math.sin(a) * r, Math.random() < 0.25);
+    }
+    // forest ring outside
+    for (let i = 0; i < 26; i++) {
+      const a = rnd(0, Math.PI * 2), r = FIELD_R + rnd(1.5, 8);
+      addTree(Math.cos(a) * r, Math.sin(a) * r, Math.random() < 0.2);
+    }
+    // dry dead-tree grove (spooky southeast corner)
+    for (let i = 0; i < 7; i++) {
+      const a = rnd(0.5, 1.1), r = rnd(7, FIELD_R - 1);
+      addDeadTree(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    for (let i = 0; i < 3; i++) {
+      const a = rnd(3.6, 4.2), r = rnd(6, FIELD_R - 2);
+      addDeadTree(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    // bushes everywhere (some with berries)
+    for (let i = 0; i < 20; i++) {
+      const a = rnd(0, Math.PI * 2), r = rnd(3, FIELD_R - 0.8);
+      addBush(Math.cos(a) * r, Math.sin(a) * r, Math.random() < 0.4);
+    }
+    // wildflowers
+    for (let i = 0; i < 60; i++) {
+      const f = new THREE.Mesh(
+        new THREE.SphereGeometry(0.09, 8, 8),
+        new THREE.MeshStandardMaterial({ color: [0xf6b8c8, 0xfdf3e0, 0xaec9ec][i % 3] })
+      );
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * (FIELD_R - 0.5);
+      f.position.set(Math.cos(a) * r, 0.09, Math.sin(a) * r);
+      scene.add(f);
+    }
+
+    // ---------- Materials ----------
+    // 🎌 3-step toon gradient → anime cel-shading
+    const toneData = new Uint8Array([110, 110, 110, 255, 165, 165, 165, 255, 215, 215, 215, 255, 255, 255, 255, 255]);
+    const toonGrad = new THREE.DataTexture(toneData, 4, 1, THREE.RGBAFormat);
+    toonGrad.minFilter = THREE.NearestFilter;
+    toonGrad.magFilter = THREE.NearestFilter;
+    toonGrad.needsUpdate = true;
+    const skinMat = new THREE.MeshToonMaterial({ color: 0xffe0c8, gradientMap: toonGrad });
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0x4a3020, roughness: 0.62, metalness: 0.08, emissive: 0x1a0f08, emissiveIntensity: 0.15, flatShading: true }); // ✨ flat facets = visible strand planes
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x33241f, roughness: 0.4 });
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
+    const blushMat = new THREE.MeshBasicMaterial({ color: 0xf7b2ba, transparent: true, opacity: 0.75 });
+    const pantsMat = new THREE.MeshToonMaterial({ color: 0xf7f5f0, gradientMap: toonGrad });
+    const redMat = new THREE.MeshStandardMaterial({ color: 0xd9333f, roughness: 0.5 });
+    const cvS = document.createElement("canvas");
+    cvS.width = 128; cvS.height = 128;
+    const ctxS = cvS.getContext("2d");
+    ctxS.fillStyle = "#33415e"; ctxS.fillRect(0, 0, 128, 128);
+    ctxS.fillStyle = "#dfe6f2";
+    for (let x = 4; x < 128; x += 16) ctxS.fillRect(x, 0, 3, 128);
+    const stripeTex = new THREE.CanvasTexture(cvS);
+    stripeTex.wrapS = stripeTex.wrapT = THREE.RepeatWrapping;
+    stripeTex.repeat.set(3, 1);
+    const shirtMat = new THREE.MeshToonMaterial({ map: stripeTex, gradientMap: toonGrad });
+
+    // ---------- Cherry ----------
+    const char = new THREE.Group();
+    scene.add(char);
+    const shoeMeshes = [];
+    const makeLeg = (side) => {
+      const hip = new THREE.Group();
+      hip.position.set(0.165 * side, 1.08, 0); // ขาชิดแบบสรีระจริง
+      // ✨ curved leg: thigh → knee → calf → ankle (no more straight tube)
+      const legProfile = [
+        [0.125, 0.00], [0.145, 0.16], [0.15, 0.34], [0.165, 0.52],
+        [0.185, 0.70], [0.20, 0.86], [0.185, 0.95],
+      ].map(([r, y]) => new THREE.Vector2(r, y));
+      const leg = new THREE.Mesh(new THREE.LatheGeometry(legProfile, 30), pantsMat);
+      leg.position.y = -0.97;
+      leg.castShadow = true;
+      const hipBall = new THREE.Mesh(new THREE.SphereGeometry(0.185, 20, 20), pantsMat);
+      hipBall.position.y = -0.06;
+      hip.add(hipBall);
+      const shoe = new THREE.Mesh(new THREE.SphereGeometry(0.17, 24, 24), whiteMat);
+      shoe.scale.set(1, 0.6, 1.4);
+      shoe.position.set(0, -1.0, 0.06);
+      shoeMeshes.push(shoe);
+      hip.add(leg, shoe);
+      char.add(hip);
+      return hip;
+    };
+    const legL = makeLeg(-1);
+    const legR = makeLeg(1);
+    // ✨ organic torso: smooth curved profile instead of a straight tube
+    const torsoProfile = [
+      [0.34, 0.00], [0.46, 0.05], [0.485, 0.16], [0.43, 0.32],
+      [0.365, 0.48], [0.375, 0.60], [0.415, 0.72], [0.42, 0.82],
+      [0.385, 0.94], [0.27, 1.05], [0.13, 1.12],
+    ].map(([r, y]) => new THREE.Vector2(r, y)); // สะโพก→เอวคอด→อก→ไหล่ลาด
+    const torso = new THREE.Mesh(new THREE.LatheGeometry(torsoProfile, 44), shirtMat);
+    torso.position.y = 1.02;
+    torso.castShadow = true;
+    char.add(torso);
+    // pelvis: smooth hip mass connecting the legs into the body
+    const pelvis = new THREE.Mesh(new THREE.SphereGeometry(0.36, 26, 26), pantsMat);
+    pelvis.scale.set(1.02, 0.66, 0.88);
+    pelvis.position.y = 1.0;
+    pelvis.castShadow = true;
+    char.add(pelvis);
+    // neck connects head and body naturally
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.16, 0.3, 22), skinMat);
+    neck.position.y = 2.18;
+    char.add(neck);
+    // 🏷️ player name + level + title label floating above the head
+    const nameCanvas = document.createElement("canvas");
+    nameCanvas.width = 480; nameCanvas.height = 130;
+    const nameTex = new THREE.CanvasTexture(nameCanvas);
+    nameTex.minFilter = THREE.LinearFilter;
+    const nameSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: nameTex, transparent: true, depthTest: false }));
+    nameSprite.scale.set(2.8, 0.76, 1);
+    nameSprite.position.y = 3.15;
+    nameSprite.visible = false;
+    char.add(nameSprite);
+    G.nameSprite = nameSprite;
+    G.drawPlayerLabel = () => {
+      const ctx = nameCanvas.getContext("2d");
+      const W = 480, H = 130, cx = W / 2;
+      ctx.clearRect(0, 0, W, H);
+      const nm = G.playerName || "เชอร์รี่";
+      const lv = G.player ? G.player.level : 1;
+      const title = G.playerTitle || "";
+      ctx.textAlign = "center";
+      // title (small, gold) on top if present — shrink to fit
+      if (title) {
+        let ts = 26;
+        ctx.font = `bold ${ts}px system-ui, sans-serif`;
+        while (ctx.measureText(title).width > W - 24 && ts > 12) { ts -= 1; ctx.font = `bold ${ts}px system-ui, sans-serif`; }
+        ctx.textBaseline = "middle";
+        ctx.lineWidth = 5; ctx.strokeStyle = "rgba(0,0,0,0.85)";
+        ctx.strokeText(title, cx, 26);
+        ctx.fillStyle = "#f5d05a";
+        ctx.fillText(title, cx, 26);
+      }
+      // name + level (bigger) — shrink to fit so the level is always visible
+      const line = `${nm}  Lv.${lv}`;
+      let fs2 = 40;
+      ctx.font = `bold ${fs2}px system-ui, sans-serif`;
+      while (ctx.measureText(line).width > W - 20 && fs2 > 16) { fs2 -= 1; ctx.font = `bold ${fs2}px system-ui, sans-serif`; }
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = 7; ctx.strokeStyle = "rgba(0,0,0,0.85)";
+      ctx.strokeText(line, cx, title ? 78 : 66);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(line, cx, title ? 78 : 66);
+      nameTex.needsUpdate = true;
+      nameSprite.visible = true;
+    };
+    for (let i = 0; i < 3; i++) {
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 10), redMat);
+      b.position.set(0, 1.85 - i * 0.28, 0.47 - i * 0.02);
+      char.add(b);
+    }
+    const handMeshes = [];
+    const makeArm = (side) => {
+      const p = new THREE.Group();
+      p.position.set(0.52 * side, 2.03, 0); // ไหล่แคบลง แขนห้อยแนบตัว
+      const sleeve = new THREE.Mesh(new THREE.SphereGeometry(0.155, 22, 22), shirtMat);
+      sleeve.scale.set(1.05, 1.3, 1.05);
+      sleeve.position.y = -0.08; // หัวไหล่กลมรับกับบ่า
+      // ✨ curved arm: shoulder → elbow → wrist
+      const armProfile = [
+        [0.072, 0.00], [0.082, 0.16], [0.092, 0.32], [0.088, 0.44], [0.10, 0.58], [0.092, 0.66],
+      ].map(([r, y]) => new THREE.Vector2(r, y));
+      const arm = new THREE.Mesh(new THREE.LatheGeometry(armProfile, 24), skinMat);
+      arm.position.y = -1.0;
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.13, 22, 22), skinMat);
+      hand.scale.set(1, 1.12, 1);
+      hand.position.y = -1.02;
+      handMeshes.push(hand);
+      p.add(sleeve, arm, hand);
+      char.add(p);
+      return p;
+    };
+    const armL = makeArm(-1);
+    const armR = makeArm(1);
+    armL.rotation.z = -0.12;
+    armR.rotation.z = 0.12;
+    // ---------- Weapons: visual model swaps with equipped item ----------
+    let updateAura = () => {}; // assigned after outfit section
+    const wand = new THREE.Group();
+    wand.position.set(0.02, -1.05, 0.12); // sits in the palm
+    wand.rotation.x = -0.5;
+    armR.add(wand);
+    // ✨ blade-tip marker (local point near the tip of the held weapon) for the sword trail
+    const tipMarker = new THREE.Object3D();
+    tipMarker.position.set(0, 1.0, 0); // roughly at the blade tip in weapon-local space
+    wand.add(tipMarker);
+    G.tipMarker = tipMarker;
+    // sword trail ribbon — a fading strip that follows the blade tip while swinging
+    const TRAIL_LEN = 9;
+    const trailPositions = new Float32Array(TRAIL_LEN * 2 * 3);
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute("position", new THREE.BufferAttribute(trailPositions, 3));
+    const trailMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
+    const trailMesh = new THREE.Mesh(trailGeo, trailMat);
+    trailMesh.frustumCulled = false;
+    trailMesh.visible = false;
+    scene.add(trailMesh);
+    // build triangle indices for the ribbon
+    {
+      const idx = [];
+      for (let i = 0; i < TRAIL_LEN - 1; i++) {
+        const a = i * 2, b = i * 2 + 1, c = (i + 1) * 2, d = (i + 1) * 2 + 1;
+        idx.push(a, b, c, b, d, c);
+      }
+      trailGeo.setIndex(idx);
+    }
+    G.swordTrail = { mesh: trailMesh, geo: trailGeo, mat: trailMat, pos: trailPositions, len: TRAIL_LEN, history: [], active: false };
+    // 🛡️ shield on the left arm (warrior only)
+    const shield = new THREE.Group();
+    {
+      const faceMat = new THREE.MeshToonMaterial({ color: 0xb03040, gradientMap: toonGrad });
+      const rimMat = new THREE.MeshStandardMaterial({ color: 0xd9b45a, metalness: 0.7, roughness: 0.3, emissive: 0x5a4210, emissiveIntensity: 0.3 });
+      // rounded shield body
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.28, 0.08, 20), faceMat);
+      body.rotation.x = Math.PI / 2;
+      shield.add(body);
+      // golden rim
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.04, 10, 24), rimMat);
+      shield.add(rim);
+      // center boss + cross emblem
+      const boss = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 14), rimMat);
+      boss.position.z = 0.06;
+      shield.add(boss);
+      for (const [w, h] of [[0.05, 0.34], [0.34, 0.05]]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.02), rimMat);
+        bar.position.z = 0.05;
+        shield.add(bar);
+      }
+      shield.position.set(-0.05, -0.95, 0.28);
+      shield.rotation.set(0.35, 0.3, 0);
+      shield.scale.setScalar(1.5);
+      shield.visible = false;
+      armL.add(shield);
+    }
+    G.shield = shield;
+    // 🤚 realistic grip: each weapon type is held at a natural angle
+    const gripFor = (id) => {
+      const it = LOOT.find((x) => x.id === id);
+      const cls = G.cls;
+      // bows are held sideways; swords angled up-forward with the flat face outward; staves upright
+      if (cls === "archer" || id === "ca" || id === "wDa") return { x: -0.15, y: 0, z: Math.PI / 2 }; // bow held horizontal
+      if (cls === "mage" || id === "cm" || id === "wDm") return { x: -0.15, y: 0, z: 0 };
+      if (id === "cw" || id === "wDw" || id === "wS" || cls === "warrior") return { x: 1.55, y: 0, z: 0 }; // blade points backward
+      if (cls === "assassin" || id === "cs" || id === "wDs") return { x: 1.4, y: 0, z: 0 }; // daggers point backward
+      if (cls === "lancer" || id === "cl") return { x: Math.PI / 4, y: 0, z: 0 }; // spear tilted 45° forward
+      if (cls === "samurai" || id === "ck") return { x: 1.5, y: 0, z: 0 }; // katana points backward
+      return { x: -0.5, y: 0, z: 0 };
+    };
+    const weaponModels = {};
+    const mkStick = (color, len = 0.7) => new THREE.Mesh(
+      new THREE.CylinderGeometry(0.03, 0.03, len, 8),
+      new THREE.MeshStandardMaterial({ color })
+    );
+    // 🗡️ off-hand dagger for assassins (left hand) — now that mkStick exists
+    const offDagger = new THREE.Group();
+    {
+      const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd8dde5, metalness: 0.85, roughness: 0.2, emissive: 0x2a3038, emissiveIntensity: 0.3 });
+      const grip = mkStick(0x2a2a34, 0.2);
+      grip.position.y = -0.08;
+      const gd = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.05), new THREE.MeshStandardMaterial({ color: 0x8a7040, metalness: 0.6 }));
+      gd.position.y = 0.02;
+      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.4, 4), bladeMat);
+      blade.position.y = 0.24;
+      blade.scale.set(1, 1, 0.5);
+      offDagger.add(grip, gd, blade);
+      offDagger.userData.tintBlade = blade;
+      offDagger.position.set(0.02, -1.05, 0.12);
+      offDagger.rotation.set(1.4, 0, 0);
+      offDagger.visible = false;
+      armL.add(offDagger);
+    }
+    G.offDagger = offDagger;
+    // 🔮 mage floating orb — hovers in front of the LEFT palm, glows by element + casts light
+    {
+      const orbG = new THREE.Group();
+      const orb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.16, 20, 20),
+        new THREE.MeshStandardMaterial({ color: 0xc9a8f0, emissive: 0x7a3ad0, emissiveIntensity: 1.3, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.92 })
+      );
+      // inner bright core
+      const core = new THREE.Mesh(
+        new THREE.SphereGeometry(0.07, 12, 12),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.8 })
+      );
+      // orbiting sparkle ring
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.22, 0.012, 8, 24),
+        new THREE.MeshStandardMaterial({ color: 0xc9a8f0, emissive: 0xb07ae0, emissiveIntensity: 1.2, transparent: true, opacity: 0.8 })
+      );
+      ring.rotation.x = Math.PI / 2.4;
+      // a soft point light so it actually illuminates the scene by element
+      const glowLight = new THREE.PointLight(0xb07ae0, 1.2, 3.5, 2);
+      orbG.add(orb, core, ring, glowLight);
+      orbG.position.set(0.02, -1.15, 0.4); // float ahead of the left palm
+      orbG.visible = false;
+      armL.add(orbG);
+      orbG.userData = { orb, core, ring, light: glowLight };
+      G.mageOrb = orbG;
+    }
+    // 🏹 archer's quiver of arrows — slung diagonally across the back
+    {
+      const quiver = new THREE.Group();
+      // the tube (leather quiver body)
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.09, 0.6, 12), new THREE.MeshStandardMaterial({ color: 0x6a4a2a, roughness: 0.8 }));
+      const rimTop = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.018, 8, 14), new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.7 }));
+      rimTop.rotation.x = Math.PI / 2; rimTop.position.y = 0.3;
+      const strap = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.02, 6, 16, Math.PI), new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.8 }));
+      strap.position.y = 0.1; strap.rotation.z = 0.6;
+      quiver.add(tube, rimTop, strap);
+      // arrows poking out of the top (shafts + fletching)
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        const ox = Math.cos(a) * 0.05, oz = Math.sin(a) * 0.05;
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.34, 5), new THREE.MeshStandardMaterial({ color: 0x8a6a3a }));
+        shaft.position.set(ox, 0.42, oz);
+        const fletch = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.09, 4), new THREE.MeshStandardMaterial({ color: i % 2 ? 0xd9536b : 0xe8a0b0 }));
+        fletch.position.set(ox, 0.56, oz); fletch.scale.set(1, 1, 0.4);
+        const tip = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.04, 4), new THREE.MeshStandardMaterial({ color: 0xc0c0c8, metalness: 0.6 }));
+        tip.position.set(ox, 0.28, oz);
+        quiver.add(shaft, fletch, tip);
+      }
+      // position it diagonally on the upper back
+      quiver.position.set(-0.22, 1.35, -0.5);
+      quiver.rotation.set(0.2, 0, -0.5);
+      quiver.visible = false;
+      char.add(quiver);
+      G.quiver = quiver;
+    }
+    // 📖 mage grimoire — a big OPEN book cradled in the RIGHT arm, pages facing up
+    {
+      const bookG = new THREE.Group();
+      const coverMat = new THREE.MeshStandardMaterial({ color: 0x6a2a4a, roughness: 0.6, metalness: 0.1 });
+      const pageMat = new THREE.MeshStandardMaterial({ color: 0xf4ecd6, roughness: 0.9, emissive: 0x2a2010, emissiveIntensity: 0.1 });
+      const goldMat2 = new THREE.MeshStandardMaterial({ color: 0xd9b45a, metalness: 0.7, roughness: 0.3, emissive: 0x5a4210, emissiveIntensity: 0.3 });
+      const runeMat = new THREE.MeshStandardMaterial({ color: 0xb07ae0, emissive: 0xb07ae0, emissiveIntensity: 0.9, transparent: true, opacity: 0.85 });
+      const tilt = 0.28; // how far the two halves lift into a V
+      // two open halves: each = cover backing + page on top + text runes
+      for (const side of [-1, 1]) {
+        const half = new THREE.Group();
+        const cover = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.03, 0.62), coverMat);
+        const page = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.012, 0.58), pageMat);
+        page.position.y = 0.022;
+        half.add(cover, page);
+        // 3 rune "text" lines glowing on each page
+        for (let r = 0; r < 3; r++) {
+          const line = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.004, 0.03), runeMat);
+          line.position.set(0, 0.03, -0.16 + r * 0.14);
+          half.add(line);
+        }
+        half.position.x = side * 0.17;         // sit left/right of the spine
+        half.rotation.z = -side * tilt;        // lift the outer edges up into an open V
+        bookG.add(half);
+      }
+      // spine ridge down the middle
+      const spine = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.64), coverMat);
+      spine.position.y = 0.01;
+      bookG.add(spine);
+      // gold page-edge trim
+      for (const sx of [-0.33, 0.33]) {
+        const trim = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.6), goldMat2);
+        trim.position.set(sx, 0.06, 0); trim.rotation.z = sx < 0 ? tilt : -tilt;
+        bookG.add(trim);
+      }
+      // floating rune gem hovering above the open pages
+      const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0), new THREE.MeshStandardMaterial({ color: 0xb07ae0, emissive: 0xb07ae0, emissiveIntensity: 1.3 }));
+      gem.position.set(0, 0.2, 0); gem.scale.set(1, 0.7, 1);
+      bookG.add(gem);
+      // sits open in the crook of the right forearm, pages tilted toward the caster
+      bookG.position.set(0.04, -1.02, 0.2);
+      bookG.rotation.set(0.5, 0, 0);
+      bookG.scale.setScalar(0.95);
+      bookG.visible = false;
+      armR.add(bookG);
+      bookG.userData = { gem, runeMat };
+      G.mageBook = bookG;
+    }
+    { // default rose wand
+      const g = new THREE.Group();
+      g.add(mkStick(0x8a6a4a));
+      const rose = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 12), new THREE.MeshStandardMaterial({ color: 0xf28ba8, emissive: 0x551122 }));
+      rose.position.y = 0.42;
+      g.add(rose);
+      g.userData.gripY = 0.3;
+      weaponModels.default = g;
+    }
+    { // w1 คทากุหลาบ+ : bigger glowing rose + leaves
+      const g = new THREE.Group();
+      g.add(mkStick(0x6a8a4a));
+      const rose = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 12), new THREE.MeshStandardMaterial({ color: 0xf06a9a, emissive: 0x772244, emissiveIntensity: 0.6 }));
+      rose.position.y = 0.45;
+      const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), new THREE.MeshStandardMaterial({ color: 0x6fae5f }));
+      leaf.scale.set(1.8, 0.5, 0.8);
+      leaf.position.set(0.12, 0.32, 0);
+      g.add(rose, leaf);
+      weaponModels.w1 = g;
+    }
+    { // w2 คทาเพลิงแดง : flickering flame
+      const g = new THREE.Group();
+      g.add(mkStick(0x5a2a1a, 0.75));
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.36, 8), new THREE.MeshStandardMaterial({ color: 0xf5652e, emissive: 0xc03a10, emissiveIntensity: 0.9 }));
+      flame.position.y = 0.54;
+      const inner = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.2, 8), new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xd0a030, emissiveIntensity: 1 }));
+      inner.position.y = 0.52;
+      g.add(flame, inner);
+      g.userData.flame = flame;
+      weaponModels.w2 = g;
+    }
+    { // w3 ดาบคริสตัล : shimmering blue blade
+      const g = new THREE.Group();
+      const handle = mkStick(0x3a3f4a, 0.3);
+      handle.position.y = -0.2;
+      const guard = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.045, 0.06), new THREE.MeshStandardMaterial({ color: 0x8ab8d8, metalness: 0.6, roughness: 0.3 }));
+      guard.position.y = -0.04;
+      const blade = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.3),
+        new THREE.MeshStandardMaterial({ color: 0x9adcf5, emissive: 0x2a7a9a, emissiveIntensity: 0.6, metalness: 0.4, roughness: 0.2 })
+      );
+      blade.scale.set(0.35, 1.5, 0.12);
+      blade.position.y = 0.34;
+      g.add(handle, guard, blade);
+      g.userData.blade = blade;
+      weaponModels.w3 = g;
+    }
+    { // wS จันทราเทวี (SECRET) : glowing crescent moon staff
+      const g = new THREE.Group();
+      g.add(mkStick(0xcfd8ea, 0.8));
+      const moon = new THREE.Mesh(
+        new THREE.TorusGeometry(0.17, 0.05, 10, 24, Math.PI * 1.4),
+        new THREE.MeshStandardMaterial({ color: 0xeef4ff, emissive: 0x8fa8ff, emissiveIntensity: 1.1, metalness: 0.3, roughness: 0.2 })
+      );
+      moon.position.y = 0.56;
+      moon.rotation.z = Math.PI * 0.8;
+      const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.06), new THREE.MeshStandardMaterial({ color: 0xfff2b0, emissive: 0xd0b040, emissiveIntensity: 1 }));
+      star.position.set(0.02, 0.56, 0);
+      g.add(moon, star);
+      g.userData.moon = moon;
+      g.userData.wstar = star;
+      g.userData.gripY = 0.42;
+      weaponModels.wS = g;
+    }
+    { // cw นักรบ: big steel sword
+      const g = new THREE.Group();
+      const handle = mkStick(0x5a3b26, 0.34);
+      handle.position.y = -0.26;
+      const guard = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.07, 0.09), new THREE.MeshStandardMaterial({ color: 0xc0a050, metalness: 0.7, roughness: 0.3 }));
+      guard.position.y = -0.05;
+      const blade = new THREE.Mesh(
+        new THREE.BoxGeometry(0.13, 1.0, 0.04),
+        new THREE.MeshStandardMaterial({ color: 0xd8dde5, metalness: 0.85, roughness: 0.2, emissive: 0x30363f })
+      );
+      blade.position.y = 0.46;
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.2, 4), blade.material);
+      tip.position.y = 1.05;
+      g.add(handle, guard, blade, tip);
+      g.userData.tint = blade; // ⚔️ blade recolors by weapon element
+      g.userData.baseTint = 0xd8dde5;
+      g.userData.gripY = 0.55;
+      weaponModels.cw = g;
+    }
+    // ⚔️🔥 themed elemental swords — each has a distinct blade shape & glow matching its name
+    const mkElemSword = (opts) => {
+      const g = new THREE.Group();
+      const handle = mkStick(opts.handle || 0x5a3b26, 0.28);
+      handle.position.y = -0.22;
+      const guard = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.055, 0.08), new THREE.MeshStandardMaterial({ color: opts.guard || 0xc0a050, metalness: 0.7, roughness: 0.3, emissive: opts.guardGlow || 0x000000, emissiveIntensity: opts.guardGlow ? 0.5 : 0 }));
+      guard.position.y = -0.05;
+      g.add(handle, guard);
+      const bladeMat = new THREE.MeshStandardMaterial({ color: opts.blade, metalness: opts.metal != null ? opts.metal : 0.6, roughness: opts.rough != null ? opts.rough : 0.25, emissive: opts.glow, emissiveIntensity: opts.glowI != null ? opts.glowI : 0.8, transparent: opts.trans || false, opacity: opts.opacity != null ? opts.opacity : 1 });
+      if (opts.shape === "flame") {
+        // 🔥 long wavy flame blade — stacked tapering segments that lick side to side
+        let yy = 0.05;
+        const flames = [];
+        for (let k = 0; k < 6; k++) {
+          const w = 0.14 - k * 0.019;
+          const seg = new THREE.Mesh(new THREE.ConeGeometry(w, 0.24, 5), bladeMat);
+          seg.position.set(Math.sin(k * 1.3) * 0.04, yy + 0.12, 0);
+          seg.rotation.z = Math.sin(k * 1.6) * 0.22;
+          g.add(seg); flames.push(seg);
+          yy += 0.17;
+        }
+        // inner bright core
+        const core = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.9, 4), new THREE.MeshStandardMaterial({ color: 0xfff0c0, emissive: 0xffca6a, emissiveIntensity: 1.5 }));
+        core.position.y = 0.5; g.add(core);
+        g.userData.flame = core; g.userData.flameParts = flames;
+      } else if (opts.shape === "crystal") {
+        // ❄️ jagged ice-crystal blade — angular faceted shards
+        const blade = new THREE.Mesh(new THREE.OctahedronGeometry(0.13, 0), bladeMat);
+        blade.scale.set(0.7, 3.4, 0.4); blade.position.y = 0.5; g.add(blade);
+        for (const sy of [0.32, 0.55, 0.78]) {
+          const shard = new THREE.Mesh(new THREE.OctahedronGeometry(0.07, 0), bladeMat);
+          shard.scale.set(0.7, 1.6, 0.4); shard.position.set(0.07, sy, 0); shard.rotation.z = -0.5; g.add(shard);
+        }
+        g.userData.flame = blade;
+      } else if (opts.shape === "stone") {
+        // 🌍 thick chunky rock blade
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.75, 0.09), bladeMat);
+        blade.position.y = 0.34; g.add(blade);
+        for (const p of [[0.06, 0.3], [-0.05, 0.5], [0.05, 0.66]]) {
+          const chunk = new THREE.Mesh(new THREE.DodecahedronGeometry(0.06, 0), bladeMat);
+          chunk.position.set(p[0], p[1], 0.05); g.add(chunk);
+        }
+        const tip = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.18, 5), bladeMat); tip.position.y = 0.78; g.add(tip);
+        g.userData.flame = null;
+      } else if (opts.shape === "wind") {
+        // 🌪️ slim curved twin-edged blade with trailing wisps
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.86, 0.02), bladeMat);
+        blade.position.y = 0.4; blade.rotation.z = 0.06; g.add(blade);
+        for (const sy of [0.3, 0.55, 0.8]) {
+          const wisp = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.012, 6, 10, Math.PI), bladeMat);
+          wisp.position.set(0.08, sy, 0); wisp.rotation.z = -0.4; g.add(wisp);
+        }
+        const tip = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.16, 4), bladeMat); tip.position.y = 0.85; g.add(tip);
+        g.userData.flame = blade;
+      } else {
+        // 🌙 radiant holy blade — glowing double-edged with a halo
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.82, 0.028), bladeMat);
+        blade.position.y = 0.38; g.add(blade);
+        const tip = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.16, 4), bladeMat); tip.position.y = 0.83; g.add(tip);
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.02, 8, 20), new THREE.MeshStandardMaterial({ color: opts.edge || 0xffe680, emissive: opts.edge || 0xffe680, emissiveIntensity: 1.4 }));
+        halo.position.y = -0.02; halo.rotation.x = Math.PI / 2; g.add(halo);
+        g.userData.flame = blade;
+      }
+      g.userData.gripY = 0.42;
+      return g;
+    };
+    weaponModels.wfw = mkElemSword({ shape: "flame", blade: 0xff7a2a, glow: 0xff4a15, glowI: 1.2, guard: 0x7a2a10, guardGlow: 0x5a1a08, handle: 0x3a1810 }); // 🔥 ดาบเพลิงอัคคี
+    weaponModels.wiw = mkElemSword({ shape: "crystal", blade: 0xbfeeff, glow: 0x5ab0e8, glowI: 0.8, guard: 0x3a6a8a, handle: 0x2a4a5a, metal: 0.3, rough: 0.1, trans: true, opacity: 0.88 }); // ❄️ ดาบน้ำแข็งพันปี
+    weaponModels.wew = mkElemSword({ shape: "stone", blade: 0x9a7a4a, glow: 0x4a3a1a, glowI: 0.3, guard: 0x6a5030, handle: 0x4a3320, metal: 0.2, rough: 0.9 }); // 🌍 ดาบปฐพีศิลา
+    weaponModels.www = mkElemSword({ shape: "wind", blade: 0xd8ffe0, glow: 0x6ac080, glowI: 0.9, edge: 0x8affa0, guard: 0x3a6a40, handle: 0x2a4a30 }); // 🌪️ ดาบเทพวายุ
+    weaponModels.wlw = mkElemSword({ shape: "holy", blade: 0xfff6dc, glow: 0xf5d05a, glowI: 1.1, edge: 0xffe680, guard: 0xd9b45a, guardGlow: 0x5a4210, handle: 0xb0904a }); // 🌙 ดาบเทพจันทรา
+    { // ca นักธนู: realistic recurve bow
+      const g = new THREE.Group();
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0x8a5a2a, roughness: 0.55, metalness: 0.05 });
+      // central grip riser (thicker, shaped middle the archer holds)
+      const riser = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.26, 8), woodMat);
+      g.add(riser);
+      const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.14, 8), new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.8 }));
+      g.add(grip);
+      // upper & lower limbs — each a gently curving arc that tapers to a thin tip
+      const limbProfile = (sign) => {
+        const pts = [];
+        const seg = 8;
+        for (let i = 0; i <= seg; i++) {
+          const u = i / seg;
+          const y = sign * (0.13 + u * 0.42); // extends out from the riser
+          const x = 0.16 * Math.sin(u * Math.PI * 0.85) + (u > 0.8 ? -(u - 0.8) * 0.35 : 0); // belly curve, recurve tip
+          pts.push(new THREE.Vector3(x, y, 0));
+        }
+        const curve = new THREE.CatmullRomCurve3(pts);
+        const limb = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, 0.028, 6, false), woodMat);
+        // taper: scale the tip end thinner by overlaying a thin cap
+        const tip = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 6), woodMat);
+        tip.position.copy(pts[pts.length - 1]);
+        const nock = new THREE.Mesh(new THREE.TorusGeometry(0.02, 0.006, 6, 10), new THREE.MeshStandardMaterial({ color: 0x2a1a10 }));
+        nock.position.copy(pts[pts.length - 1]); nock.rotation.y = Math.PI / 2;
+        return { limb, tip, nock, end: pts[pts.length - 1] };
+      };
+      const up = limbProfile(1), lo = limbProfile(-1);
+      g.add(up.limb, up.tip, up.nock, lo.limb, lo.tip, lo.nock);
+      // taut string from tip to tip, pinched at the nocking point
+      const strMat = new THREE.MeshStandardMaterial({ color: 0xf0ead0, roughness: 0.9 });
+      const mid = new THREE.Vector3(-0.02, 0, 0); // slight pull toward the archer
+      const sTop = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, up.end.distanceTo(mid), 5), strMat);
+      sTop.position.copy(up.end.clone().add(mid).multiplyScalar(0.5));
+      sTop.lookAt(up.end); sTop.rotateX(Math.PI / 2);
+      const sBot = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, lo.end.distanceTo(mid), 5), strMat);
+      sBot.position.copy(lo.end.clone().add(mid).multiplyScalar(0.5));
+      sBot.lookAt(lo.end); sBot.rotateX(Math.PI / 2);
+      // nocking point bead
+      const bead = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 6), new THREE.MeshStandardMaterial({ color: 0x3a2a1a }));
+      bead.position.copy(mid);
+      g.add(sTop, sBot, bead);
+      g.userData.tint = up.limb; // 🏹 limb recolors by weapon element
+      g.userData.tintAll = [up.limb, lo.limb, riser]; // recolor the whole wood
+      g.userData.baseTint = 0x8a5a2a;
+      g.userData.gripY = 0.28; // 🏹 hold the bow a bit higher
+      g.userData.gripZ = 0.28; // 🏹 hold the bow out away from the body
+      g.scale.setScalar(1.35); // 🏹 bigger, easier to see
+      weaponModels.ca = g;
+    }
+    { // cm นักเวท: arcane orb staff
+      const g = new THREE.Group();
+      g.add(mkStick(0x4a2a6a, 0.85));
+      const orb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.13, 14, 14),
+        new THREE.MeshStandardMaterial({ color: 0xc9a8f0, emissive: 0x7a3ad0, emissiveIntensity: 1, roughness: 0.2 })
+      );
+      orb.position.y = 0.58;
+      const holder = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.025, 8, 18), new THREE.MeshStandardMaterial({ color: 0xc0a050, metalness: 0.7 }));
+      holder.position.y = 0.58;
+      g.add(orb, holder);
+      g.userData.orb = orb;
+      g.userData.tint = orb; // 🔮 orb recolors by weapon element
+      g.userData.baseTint = 0xc9a8f0;
+      g.userData.gripY = 0.45;
+      weaponModels.cm = g;
+    }
+    { // cs 🗡️ assassin main-hand dagger (single — off-hand dagger is separate)
+      const bladeMat0 = new THREE.MeshStandardMaterial({ color: 0xd8dde5, metalness: 0.85, roughness: 0.2, emissive: 0x2a3038, emissiveIntensity: 0.3 });
+      const g = new THREE.Group();
+      const tintParts = [];
+      const dg = new THREE.Group();
+      const grip = mkStick(0x2a2a34, 0.2);
+      grip.position.y = -0.08;
+      const gd = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.05), new THREE.MeshStandardMaterial({ color: 0x8a7040, metalness: 0.6 }));
+      gd.position.y = 0.02;
+      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.4, 4), bladeMat0.clone());
+      blade.position.y = 0.24;
+      blade.scale.set(1, 1, 0.5);
+      tintParts.push(blade);
+      dg.add(grip, gd, blade);
+      g.add(dg);
+      g.userData.tintParts = tintParts;
+      g.userData.baseTint = 0xd8dde5;
+      g.userData.gripY = 0.12;
+      weaponModels.cs = g;
+    }
+    { // cl 🔱 lancer trident — tall as the character, three-pronged head
+      const g = new THREE.Group();
+      const steelMat = new THREE.MeshStandardMaterial({ color: 0xcdd4dc, metalness: 0.8, roughness: 0.25, emissive: 0x2a3038, emissiveIntensity: 0.3 });
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 0.6 });
+      // long shaft ~2.0 tall (matches character height)
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.0, 8), woodMat);
+      shaft.position.y = 0.55;
+      // gold collar where the head meets the shaft
+      const collar = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.022, 8, 12), new THREE.MeshStandardMaterial({ color: 0xf5c542, metalness: 0.7 }));
+      collar.rotation.x = Math.PI / 2; collar.position.y = 1.5;
+      // 🔱 three-pronged head: center prong + two outer prongs on a crossbar
+      const centerP = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.42, 6), steelMat);
+      centerP.position.y = 1.82;
+      const crossbar = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.05, 0.05), steelMat);
+      crossbar.position.y = 1.58;
+      g.add(shaft, collar, centerP, crossbar);
+      for (const sx of [-1, 1]) {
+        // outer prong: rises up from the end of the crossbar, curving slightly inward
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.22, 6), steelMat);
+        base.position.set(sx * 0.16, 1.66, 0); g.add(base);
+        const prong = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.34, 6), steelMat);
+        prong.position.set(sx * 0.15, 1.9, 0); prong.rotation.z = -sx * 0.12; g.add(prong);
+      }
+      // red tassel just below the head
+      const tassel = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.18, 6), new THREE.MeshStandardMaterial({ color: 0xc0392b }));
+      tassel.position.y = 1.42; tassel.rotation.x = Math.PI; g.add(tassel);
+      g.userData.gripY = -0.55; // 🤚 grip lower on the shaft
+      weaponModels.cl = g;
+    }
+    { // ck ⚔️ samurai katana — curved blade with tsuba guard
+      const g = new THREE.Group();
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.32, 8), new THREE.MeshStandardMaterial({ color: 0x2a2a34 }));
+      handle.position.y = -0.05;
+      const tsuba = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.025, 12), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.6 }));
+      tsuba.position.y = 0.12;
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.85, 0.012), new THREE.MeshStandardMaterial({ color: 0xe8ecf0, metalness: 0.85, roughness: 0.15, emissive: 0x3a4048, emissiveIntensity: 0.35 }));
+      blade.position.y = 0.56; blade.rotation.z = 0.1; // slight curve feel
+      const tipk = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.12, 4), new THREE.MeshStandardMaterial({ color: 0xe8ecf0, metalness: 0.85 }));
+      tipk.position.set(0.04, 0.99, 0); tipk.scale.set(1, 1, 0.3);
+      g.add(handle, tsuba, blade, tipk);
+      g.userData.gripY = 0.15;
+      weaponModels.ck = g;
+    }
+    // ⚔️ themed katana variants — each drops with its own colours & glowing edge
+    const mkKatana = (opts) => {
+      const g = new THREE.Group();
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.34, 8), new THREE.MeshStandardMaterial({ color: opts.handle || 0x2a2a34, roughness: 0.7 }));
+      handle.position.y = -0.05;
+      // handle wrap rings
+      for (let k = 0; k < 4; k++) {
+        const wrap = new THREE.Mesh(new THREE.TorusGeometry(0.034, 0.008, 6, 10), new THREE.MeshStandardMaterial({ color: opts.wrap || 0xc0392b }));
+        wrap.position.y = -0.16 + k * 0.07; wrap.rotation.x = Math.PI / 2;
+        g.add(wrap);
+      }
+      const tsuba = new THREE.Mesh(opts.roundGuard ? new THREE.TorusGeometry(0.075, 0.03, 8, 18) : new THREE.CylinderGeometry(0.095, 0.095, 0.025, opts.guardSides || 12), new THREE.MeshStandardMaterial({ color: opts.guard || 0x1a1a1a, metalness: 0.7, roughness: 0.3, emissive: opts.guardGlow || 0x000000, emissiveIntensity: opts.guardGlow ? 0.5 : 0 }));
+      tsuba.position.y = 0.12; if (opts.roundGuard) tsuba.rotation.x = Math.PI / 2;
+      // blade
+      const bladeMat = new THREE.MeshStandardMaterial({ color: opts.blade || 0xe8ecf0, metalness: 0.9, roughness: 0.12, emissive: opts.glow || 0x3a4048, emissiveIntensity: opts.glowI != null ? opts.glowI : 0.35 });
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.9, 0.013), bladeMat);
+      blade.position.y = 0.59; blade.rotation.z = opts.curve != null ? opts.curve : 0.1;
+      const tipk = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.14, 4), bladeMat);
+      tipk.position.set(0.05, 1.04, 0); tipk.scale.set(1, 1, 0.3); tipk.rotation.z = -0.2;
+      // glowing hamon edge line
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.9, 0.016), new THREE.MeshStandardMaterial({ color: opts.edge || 0xffffff, emissive: opts.edge || 0xffffff, emissiveIntensity: 1.2, transparent: true, opacity: 0.9 }));
+      edge.position.set(-0.02, 0.59, 0); edge.rotation.z = opts.curve != null ? opts.curve : 0.1;
+      g.add(handle, tsuba, blade, tipk, edge);
+      g.userData.flame = opts.animGlow ? edge : null;
+      g.userData.gripY = 0.15;
+      return g;
+    };
+    weaponModels.kf = mkKatana({ blade: 0xffd0a0, glow: 0xff5a1a, glowI: 0.7, edge: 0xff7a2a, guard: 0x5a2a10, wrap: 0xc0392b, animGlow: true }); // 🔥 fire
+    weaponModels.ki = mkKatana({ blade: 0xd0f0ff, glow: 0x4aa0e0, glowI: 0.7, edge: 0xaef0ff, guard: 0x2a5a7a, wrap: 0x4a90c0, roundGuard: true }); // ❄️ ice
+    weaponModels.kw = mkKatana({ blade: 0xd8ffe0, glow: 0x4ac06a, glowI: 0.6, edge: 0x8affa0, guard: 0x2a5a30, wrap: 0x5aa06a, curve: 0.16 }); // 🍃 wind (more curved)
+    weaponModels.kl = mkKatana({ blade: 0xfff8e0, glow: 0xf5d05a, glowI: 0.9, edge: 0xffe680, guard: 0xd9b45a, guardGlow: 0x5a4210, wrap: 0xf0e0a0, roundGuard: true, animGlow: true }); // 🌟 light
+    weaponModels.kd = mkKatana({ blade: 0x6a2018, glow: 0xff4a1a, glowI: 1.0, edge: 0xff6a2a, guard: 0x8a2a1a, guardGlow: 0x5a0f08, wrap: 0x3a1a12, curve: 0.14, animGlow: true }); // 🐉 dragon
+    { // wDw 🐉 dragon fang sword — dark blade with burning edge + dragon-head guard
+      const g = new THREE.Group();
+      const handle = mkStick(0x3a1a12, 0.3);
+      handle.position.y = -0.22;
+      // dragon-head crossguard
+      const dhead = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 12), new THREE.MeshStandardMaterial({ color: 0x8a2a1a, metalness: 0.5, roughness: 0.4, emissive: 0x3a0a05, emissiveIntensity: 0.6 }));
+      dhead.scale.set(1.3, 0.8, 1);
+      dhead.position.y = -0.03;
+      const snout = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.14, 8), dhead.material);
+      snout.rotation.x = Math.PI / 2;
+      snout.position.set(0, -0.03, 0.14);
+      for (const sx of [-1, 1]) {
+        const dhorn = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.16, 6), new THREE.MeshStandardMaterial({ color: 0xe8d8b0 }));
+        dhorn.position.set(0.09 * sx, 0.04, -0.05);
+        dhead.add(dhorn);
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xe0a020, emissiveIntensity: 1.4 }));
+        eye.position.set(0.05 * sx, 0.02, 0.08);
+        dhead.add(eye);
+      }
+      const blade = new THREE.Mesh(
+        new THREE.BoxGeometry(0.11, 0.82, 0.035),
+        new THREE.MeshStandardMaterial({ color: 0x2a1f1c, metalness: 0.8, roughness: 0.25, emissive: 0x5a1508, emissiveIntensity: 0.7 })
+      );
+      blade.position.y = 0.42;
+      const edge = new THREE.Mesh(
+        new THREE.BoxGeometry(0.03, 0.82, 0.045),
+        new THREE.MeshStandardMaterial({ color: 0xff6a2a, emissive: 0xc03a10, emissiveIntensity: 1.2 })
+      );
+      edge.position.set(0.06, 0.42, 0);
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.18, 4), blade.material);
+      tip.position.y = 0.92;
+      g.add(handle, dhead, snout, blade, edge, tip);
+      g.userData.flame = edge;
+      g.userData.gripY = 0.42;
+      weaponModels.wDw = g;
+    }
+    { // wDa 🐉 dragon bow — curved wings, glowing string, dragon-head tips
+      const g = new THREE.Group();
+      const boneMat = new THREE.MeshStandardMaterial({ color: 0x6a2018, metalness: 0.5, roughness: 0.4, emissive: 0x3a0a05, emissiveIntensity: 0.55 });
+      const goldMat = new THREE.MeshStandardMaterial({ color: 0xd9b45a, metalness: 0.7, roughness: 0.3, emissive: 0x5a4210, emissiveIntensity: 0.4 });
+      // two curved limbs (dragon wing-arcs)
+      for (const sy of [1, -1]) {
+        const limb = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.035, 8, 20, Math.PI * 0.6), boneMat);
+        limb.position.y = 0.32 * sy;
+        limb.rotation.z = sy > 0 ? -Math.PI * 0.2 : Math.PI * 0.2 + Math.PI;
+        g.add(limb);
+        // wing membrane
+        const wing = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.28, 3), new THREE.MeshStandardMaterial({ color: 0xc0402a, transparent: true, opacity: 0.6, side: THREE.DoubleSide, emissive: 0x601005, emissiveIntensity: 0.5 }));
+        wing.position.set(-0.14, 0.42 * sy, 0);
+        wing.rotation.z = sy > 0 ? 0.6 : -0.6;
+        g.add(wing);
+        // dragon-head tip
+        const tipHead = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 6), goldMat);
+        tipHead.position.set(0.16, 0.56 * sy, 0);
+        tipHead.rotation.z = sy > 0 ? -0.5 : 0.5;
+        g.add(tipHead);
+      }
+      const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.3, 8), goldMat);
+      g.add(grip);
+      // glowing energy string
+      const str = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.86, 6), new THREE.MeshStandardMaterial({ color: 0xff8a3a, emissive: 0xff5a1a, emissiveIntensity: 1.3 }));
+      str.position.x = 0.14;
+      g.add(str);
+      g.userData.flame = str;
+      g.userData.gripY = 0.0;
+      weaponModels.wDa = g;
+    }
+    { // wDm 🐉 dragon staff — coiled dragon around a blazing orb
+      const g = new THREE.Group();
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 1.0, 8), new THREE.MeshStandardMaterial({ color: 0x4a1a12, metalness: 0.5, roughness: 0.4, emissive: 0x2a0805, emissiveIntensity: 0.5 }));
+      g.add(shaft);
+      // coiled dragon body (stacked rings)
+      for (let i = 0; i < 4; i++) {
+        const coil = new THREE.Mesh(new THREE.TorusGeometry(0.09 + i * 0.005, 0.028, 8, 16), new THREE.MeshStandardMaterial({ color: 0x8a2a1a, metalness: 0.5, roughness: 0.4, emissive: 0x4a0f08, emissiveIntensity: 0.6 }));
+        coil.position.y = 0.1 + i * 0.11;
+        coil.rotation.x = Math.PI / 2;
+        coil.rotation.z = i * 0.5;
+        g.add(coil);
+      }
+      // claws holding the orb
+      for (let i = 0; i < 4; i++) {
+        const claw = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.18, 5), new THREE.MeshStandardMaterial({ color: 0xe8d8b0 }));
+        const a = (i / 4) * Math.PI * 2;
+        claw.position.set(Math.cos(a) * 0.13, 0.6, Math.sin(a) * 0.13);
+        claw.rotation.z = Math.cos(a) * 0.6;
+        claw.rotation.x = -Math.sin(a) * 0.6;
+        g.add(claw);
+      }
+      // blazing dragon orb
+      const orb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 16), new THREE.MeshStandardMaterial({ color: 0xff7a3a, emissive: 0xff4a1a, emissiveIntensity: 1.4, roughness: 0.2 }));
+      orb.position.y = 0.68;
+      g.add(orb);
+      g.userData.orb = orb;
+      g.userData.flame = orb;
+      g.userData.gripY = 0.45;
+      weaponModels.wDm = g;
+    }
+    { // wDs 🐉 dragon main-hand dagger (single — off-hand is separate)
+      const g = new THREE.Group();
+      const boneMat = new THREE.MeshStandardMaterial({ color: 0x6a2018, metalness: 0.5, roughness: 0.35, emissive: 0x3a0a05, emissiveIntensity: 0.6 });
+      const emberMat = new THREE.MeshStandardMaterial({ color: 0xff6a2a, emissive: 0xc03a10, emissiveIntensity: 1.2 });
+      const embers = [];
+      const dg = new THREE.Group();
+      const grip = mkStick(0x3a1a12, 0.2);
+      grip.position.y = -0.08;
+      const guard = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.1, 6), boneMat);
+      guard.rotation.z = Math.PI / 2;
+      guard.position.y = 0.03;
+      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.42, 4), boneMat);
+      blade.position.y = 0.26;
+      blade.scale.set(1, 1, 0.45);
+      const ember = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.42, 4), emberMat);
+      ember.position.set(0.02, 0.26, 0);
+      embers.push(ember);
+      dg.add(grip, guard, blade, ember);
+      g.add(dg);
+      g.userData.flame = embers[0];
+      g.userData.gripY = 0.12;
+      weaponModels.wDs = g;
+    }
+    Object.values(weaponModels).forEach((m) => { m.visible = false; wand.add(m); });
+    weaponModels.default.visible = true;
+    let curWeapon = "default";
+    G.setWeaponVisual = (id) => {
+      curWeapon = id && weaponModels[id] ? id : (CLASS_WEAPON[G.cls] || "default"); // class weapons share the class model
+      Object.entries(weaponModels).forEach(([k, m]) => (m.visible = k === curWeapon));
+      // 🤚 orient the weapon naturally in the hand
+      const grip = gripFor(curWeapon);
+      wand.rotation.set(grip.x, grip.y, grip.z);
+      // 🤚 shift the model so the HANDLE sits in the palm (not the blade)
+      const model = weaponModels[curWeapon];
+      if (model) {
+        const gy = model.userData.gripY != null ? model.userData.gripY : 0.28;
+        model.position.y = gy; // raise weapon so grip point is at the hand
+        model.position.z = model.userData.gripZ != null ? model.userData.gripZ : 0; // push away from the body if set
+      }
+      if (model && model.userData.tint) {
+        const it = LOOT.find((x) => x.id === id);
+        const hex = it && it.elem ? (ELEM_GLOW[it.elem] || model.userData.baseTint) : model.userData.baseTint;
+        model.userData.tint.material.color.setHex(hex);
+        model.userData.tint.material.emissive.setHex(it && it.elem ? hex : 0x000000);
+        model.userData.tint.material.emissiveIntensity = it ? 0.25 + (TIER[it.rarity] || 1) * 0.18 : 0.2;
+      }
+      // 🗡️ dual daggers: tint both blades
+      if (model && model.userData.tintParts) {
+        const it = LOOT.find((x) => x.id === id);
+        const hex = it && it.elem ? (ELEM_GLOW[it.elem] || model.userData.baseTint) : model.userData.baseTint;
+        model.userData.tintParts.forEach((b) => {
+          b.material.color.setHex(hex);
+          b.material.emissive.setHex(it && it.elem ? hex : 0x2a3038);
+          b.material.emissiveIntensity = it && it.elem ? 0.3 + (TIER[it.rarity] || 1) * 0.15 : 0.3;
+        });
+      }
+      // 🛡️ warriors carry a shield in the off-hand
+      if (G.shield) G.shield.visible = G.cls === "warrior";
+      if (G.quiver) G.quiver.visible = G.cls === "archer"; // 🏹 quiver on the back for archers
+      // 🔮 mage: hide the hand weapon, show the floating orb tinted by element
+      if (G.mageOrb) {
+        const isMage = G.cls === "mage";
+        G.mageOrb.visible = isMage;
+        if (model) model.visible = model.visible && !isMage; // don't show a staff in hand
+        // 💪 left arm pose: raise & bend the forearm forward to cradle the orb (mage only)
+        if (isMage) {
+          armL.rotation.x = -1.35; // lift the arm forward, elbow ~90° presenting the palm
+          armL.rotation.z = -0.05;
+          G.mageOrb.position.set(0.02, -1.0, 0.22); // orb rests right on the palm, nudged forward
+          armR.rotation.x = -0.9; // right forearm forward to carry the tome
+          armR.rotation.z = 0.1;
+        } else {
+          armL.rotation.x = 0;
+          armL.rotation.z = -0.12;
+          armR.rotation.x = 0;
+        }
+        if (G.mageBook) G.mageBook.visible = isMage; // 📖 tome only for mage
+        if (isMage) {
+          const it = LOOT.find((x) => x.id === id);
+          const hex = it && it.elem ? (ELEM_GLOW[it.elem] || 0xb07ae0) : 0xb07ae0;
+          const ud = G.mageOrb.userData;
+          ud.orb.material.color.setHex(hex);
+          ud.orb.material.emissive.setHex(hex);
+          ud.ring.material.color.setHex(hex);
+          ud.ring.material.emissive.setHex(hex);
+          ud.light.color.setHex(hex);
+          if (G.mageBook && G.mageBook.userData.gem) {
+            G.mageBook.userData.gem.material.color.setHex(hex);
+            G.mageBook.userData.gem.material.emissive.setHex(hex);
+            if (G.mageBook.userData.runeMat) {
+              G.mageBook.userData.runeMat.color.setHex(hex);
+              G.mageBook.userData.runeMat.emissive.setHex(hex);
+            }
+          }
+        }
+      }
+      // 🗡️ off-hand dagger tint matches the equipped dagger
+      if (G.offDagger && G.cls === "assassin") {
+        const it = LOOT.find((x) => x.id === id);
+        const hex = it && it.elem ? (ELEM_GLOW[it.elem] || 0xd8dde5) : 0xd8dde5;
+        const b = G.offDagger.userData.tintBlade;
+        if (b) {
+          b.material.color.setHex(hex);
+          b.material.emissive.setHex(it && it.elem ? hex : 0x2a3038);
+          b.material.emissiveIntensity = it && it.elem ? 0.3 + (TIER[it.rarity] || 1) * 0.15 : 0.3;
+        }
+      }
+      updateAura();
+    };
+
+    const headG = new THREE.Group();
+    headG.position.y = 2.78;
+    headG.scale.setScalar(1.14); // 🎌 anime proportions: bigger head
+    char.add(headG);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.62, 32, 32), skinMat);
+    head.scale.set(1, 1.02, 0.95);
+    head.castShadow = true;
+    headG.add(head);
+    const baseHair = new THREE.Group(); // scalp + bangs + fringe shared by styles 0-4
+    headG.add(baseHair);
+    const hairBack = new THREE.Mesh(new THREE.SphereGeometry(0.66, 20, 14), hairMat);
+    hairBack.scale.set(1.02, 1.05, 0.98);
+    hairBack.position.set(0, 0.06, -0.1);
+    baseHair.add(hairBack);
+    // ⚡ jagged pointed rim — spiky locks hanging around the sides & back edge
+    for (let k = 0; k < 9; k++) {
+      const a = Math.PI * 0.35 + (k / 8) * Math.PI * 1.3; // arc around sides+back (skip the face)
+      const spk = new THREE.Mesh(new THREE.ConeGeometry(0.085 + (k % 3) * 0.02, 0.3 + (k % 2) * 0.12, 4), hairMat);
+      spk.scale.set(1, 1, 0.5);
+      spk.rotation.x = Math.PI - 0.15;
+      spk.rotation.y = a;
+      spk.position.set(Math.sin(a) * 0.56, -0.38 - (k % 2) * 0.05, Math.cos(a) * 0.5 - 0.06);
+      baseHair.add(spk);
+    }
+    const face = new THREE.Mesh(new THREE.SphereGeometry(0.58, 32, 32), skinMat);
+    face.scale.set(0.95, 0.92, 0.8);
+    face.position.set(0, -0.05, 0.14);
+    headG.add(face);
+    const bangs = new THREE.Mesh(new THREE.SphereGeometry(0.6, 32, 32, 0, Math.PI * 2, 0, Math.PI * 0.42), hairMat);
+    bangs.position.set(0.04, 0.16, 0.08);
+    baseHair.add(bangs);
+    // 💇 smooth side-swept fringe: curved, tapered, flattened locks (not pointy cones)
+    // each lock is a lathe-turned teardrop, squashed flat and tilted to sweep across the brow
+    const mkLock = (len, wide, curl) => {
+      const pts = [];
+      const segs = 8;
+      for (let i = 0; i <= segs; i++) {
+        const u = i / segs;
+        // teardrop profile tapering to a NEEDLE point (ปลายแหลม)
+        const r = wide * Math.sin(u * Math.PI * 0.9) * (1 - u * 0.55) + 0.003;
+        pts.push(new THREE.Vector2(r, -u * len));
+      }
+      const g = new THREE.LatheGeometry(pts, 6); // 6 sides = visible facet lines
+      const m = new THREE.Mesh(g, hairMat);
+      m.scale.set(1, 1, 0.42); // flatten front-to-back so it reads as a hair sheet
+      m.userData.curl = curl;
+      return m;
+    };
+    // layered fringe sweeping from a side part (left-heavy, natural asymmetry)
+    const fringeSpec = [
+      { x: -0.30, z: 0.40, len: 0.52, wide: 0.13, rotX: 0.55, rotZ: 0.55, curl: 0.2 },
+      { x: -0.14, z: 0.46, len: 0.46, wide: 0.12, rotX: 0.6, rotZ: 0.32, curl: 0.12 },
+      { x: 0.02, z: 0.48, len: 0.40, wide: 0.115, rotX: 0.62, rotZ: 0.12, curl: 0.02 },
+      { x: 0.18, z: 0.45, len: 0.44, wide: 0.12, rotX: 0.6, rotZ: -0.18, curl: -0.1 },
+      { x: 0.33, z: 0.38, len: 0.50, wide: 0.125, rotX: 0.55, rotZ: -0.42, curl: -0.18 },
+      { x: -0.44, z: 0.28, len: 0.58, wide: 0.11, rotX: 0.4, rotZ: 0.7, curl: 0.24 }, // longer temple sweep
+      { x: 0.46, z: 0.26, len: 0.54, wide: 0.11, rotX: 0.4, rotZ: -0.62, curl: -0.22 },
+    ];
+    fringeSpec.forEach((f) => {
+      const lock = mkLock(f.len, f.wide, f.curl);
+      lock.position.set(f.x, 0.34, f.z);
+      lock.rotation.x = Math.PI - f.rotX; // point downward over the forehead
+      lock.rotation.z = f.rotZ;           // fan out to the sides
+      lock.rotation.y = f.curl * 0.6;     // slight twist for a sweeping look
+      baseHair.add(lock);
+    });
+    // face-framing side locks (ปอยผมข้างแก้ม) — smooth tapered, gently curved inward
+    for (const sx of [-1, 1]) {
+      const frame = mkLock(0.66, 0.075, 0.1 * sx);
+      frame.position.set(0.55 * sx, 0.14, 0.30);
+      frame.rotation.x = Math.PI - 0.18;
+      frame.rotation.z = 0.12 * sx;
+      frame.scale.set(1, 1, 0.5);
+      baseHair.add(frame);
+    }
+    // 🎌 ahoge — the springy hair antenna (smooth curved wisp)
+    const ahoge = new THREE.Group();
+    {
+      const curve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0.06, 0.16, 0.02),
+        new THREE.Vector3(0.16, 0.28, 0.01),
+        new THREE.Vector3(0.30, 0.30, -0.02),
+        new THREE.Vector3(0.40, 0.24, -0.04),
+      ]);
+      const ah = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, 0.028, 6, false), hairMat);
+      ah.geometry.scale(1, 1, 1);
+      // taper: not natively supported, but the thin tube already reads as a wisp
+      ahoge.add(ah);
+    }
+    ahoge.position.set(0.05, 0.62, -0.05);
+    headG.add(ahoge);
+
+    // ---------- 💇 Hairstyles (switchable) ----------
+    const hairStyles = [];
+    // 💇 flowing hair: strands pivot at the root so they can sway naturally
+    const hairSwayParts = [];
+    const mkFlowStrand = (topR, botR, len, opts = {}) => {
+      const pv = new THREE.Group(); // pivot at the root
+      // 5-sided faceted segments — visible edge lines, not smooth round tubes
+      const upper = new THREE.Mesh(new THREE.CylinderGeometry(topR, topR * 0.72, len * 0.5, 5), hairMat);
+      upper.position.y = -len * 0.25;
+      const lower = new THREE.Mesh(new THREE.CylinderGeometry(topR * 0.68, botR * 0.9, len * 0.35, 5), hairMat);
+      lower.position.y = -len * 0.67;
+      lower.position.z = (opts.curl || 0.06) * len;
+      lower.rotation.x = (opts.curl || 0.06) * 2.2;
+      // ⚡ sharp pointed tip (แฉกแหลม) — a flattened spike, plus a smaller offshoot spike
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(botR * 1.15, len * 0.3, 4), hairMat);
+      tip.scale.set(1, 1, 0.55);
+      tip.rotation.x = Math.PI + (opts.curl || 0.06) * 3;
+      tip.position.set(0, -len * 0.97, (opts.curl || 0.06) * len * 1.5);
+      const tip2 = new THREE.Mesh(new THREE.ConeGeometry(botR * 0.7, len * 0.2, 4), hairMat);
+      tip2.scale.set(1, 1, 0.5);
+      tip2.rotation.x = Math.PI + (opts.curl || 0.06) * 2;
+      tip2.rotation.z = 0.35;
+      tip2.position.set(topR * 0.7, -len * 0.9, (opts.curl || 0.06) * len);
+      pv.add(upper, lower, tip, tip2);
+      pv.userData.sway = { amp: opts.amp != null ? opts.amp : 0.16, phase: opts.phase || 0 };
+      hairSwayParts.push(pv);
+      return pv;
+    };
+    // style 0: long flowing shoulder-length (default) — side strands + back curtain
+    const hairLong = new THREE.Group();
+    for (const sx of [-1, 1]) {
+      const pv = mkFlowStrand(0.1, 0.035, 0.95, { amp: 0.2, phase: sx > 0 ? 0 : 1.9, curl: 0.07 });
+      pv.position.set(0.52 * sx, 0.12, 0.05);
+      pv.rotation.z = sx > 0 ? -0.06 : 0.06;
+      hairLong.add(pv);
+    }
+    for (const [bx, bp] of [[-0.28, 0.8], [0, 2.4], [0.28, 4.0]]) {
+      const back = mkFlowStrand(0.17, 0.05, 0.9, { amp: 0.13, phase: bp, curl: -0.05 });
+      back.position.set(bx, 0.1, -0.4);
+      hairLong.add(back);
+    }
+    hairStyles.push(hairLong);
+    // style 1: short bob — soft swaying side pieces
+    const hairBob = new THREE.Group();
+    for (const sx of [-0.5, 0.5]) {
+      const pv = mkFlowStrand(0.12, 0.07, 0.45, { amp: 0.08, phase: sx > 0 ? 0.5 : 2.2, curl: 0.1 });
+      pv.position.set(sx, 0.1, 0.05);
+      pv.rotation.z = sx > 0 ? -0.12 : 0.12;
+      hairBob.add(pv);
+    }
+    const bobBack = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), hairMat);
+    bobBack.scale.set(1.1, 0.75, 0.8);
+    bobBack.position.set(0, -0.25, -0.25);
+    hairBob.add(bobBack);
+    hairStyles.push(hairBob);
+    // style 2: twin tails — big bouncy pigtails
+    const hairTwin = new THREE.Group();
+    for (const sx of [-0.62, 0.62]) {
+      const tie = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 10), redMat);
+      tie.position.set(sx, 0.32, -0.1);
+      hairTwin.add(tie);
+      const pv = mkFlowStrand(0.11, 0.04, 1.15, { amp: 0.26, phase: sx > 0 ? 0.3 : 2.0, curl: 0.09 });
+      pv.position.set(sx, 0.32, -0.1);
+      pv.rotation.z = sx > 0 ? -0.3 : 0.3;
+      hairTwin.add(pv);
+    }
+    hairStyles.push(hairTwin);
+    // style 3: high ponytail — long swishing tail
+    const hairPony = new THREE.Group();
+    const ponyTie = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), redMat);
+    ponyTie.position.set(0, 0.5, -0.42);
+    hairPony.add(ponyTie);
+    {
+      const pv = mkFlowStrand(0.13, 0.04, 1.25, { amp: 0.3, phase: 1.1, curl: 0.12 });
+      pv.position.set(0, 0.5, -0.42);
+      pv.rotation.x = 0.42; // flows backward
+      hairPony.add(pv);
+    }
+    hairStyles.push(hairPony);
+    // style 4: bob + iconic black cone hairpieces 🖤
+    const hairHorn = new THREE.Group();
+    for (const sx of [-0.5, 0.5]) {
+      const s2 = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.1, 0.45, 10), hairMat);
+      s2.position.set(sx, -0.12, 0.05);
+      s2.rotation.z = sx > 0 ? -0.12 : 0.12;
+      hairHorn.add(s2);
+    }
+    const hornBack = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), hairMat);
+    hornBack.scale.set(1.1, 0.75, 0.8);
+    hornBack.position.set(0, -0.25, -0.25);
+    hairHorn.add(hornBack);
+    const hornDark = new THREE.MeshToonMaterial({ color: 0x2a2622, gradientMap: toonGrad });
+    const hornGold = new THREE.MeshStandardMaterial({ color: 0xd9b45a, metalness: 0.6, roughness: 0.3, emissive: 0x5a4210, emissiveIntensity: 0.4 });
+    for (const sx of [-0.52, 0.52]) {
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.42, 14), hornDark);
+      cone.position.set(sx, 0.52, -0.08);
+      cone.rotation.z = sx > 0 ? -0.55 : 0.55;
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.025, 8, 16), hornGold);
+      band.position.set(sx * 0.92, 0.42, -0.08);
+      band.rotation.z = (sx > 0 ? -0.55 : 0.55) + Math.PI / 2;
+      hairHorn.add(cone, band);
+    }
+    hairStyles.push(hairHorn);
+
+    // ===== 4 styles from the reference image =====
+    // helper: a flat sheet of hair (for straight curtains) using a tapered box-ish lock
+    const mkSheet = (w, h, dep, curl) => {
+      const pv = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.82, dep), hairMat);
+      body.position.y = -h * 0.41;
+      body.position.z = (curl || 0) * h * 0.4;
+      pv.add(body);
+      // ⚡ jagged pointed teeth along the bottom edge (ปลายแฉกแหลม)
+      const teeth = Math.max(2, Math.round(w / 0.11));
+      for (let k = 0; k < teeth; k++) {
+        const tx = -w / 2 + (k + 0.5) * (w / teeth);
+        const tl = h * (0.22 + ((k * 7) % 3) * 0.05); // uneven lengths
+        const tooth = new THREE.Mesh(new THREE.ConeGeometry(w / teeth * 0.62, tl, 4), hairMat);
+        tooth.scale.set(1, 1, dep / (w / teeth));
+        tooth.rotation.x = Math.PI;
+        tooth.position.set(tx, -h * 0.82 - tl / 2 + 0.02, (curl || 0) * h * 0.4);
+        pv.add(tooth);
+      }
+      pv.userData.sway = { amp: 0.09, phase: Math.random() * 6 };
+      hairSwayParts.push(pv);
+      return pv;
+    };
+
+    // style 5: 💇 straight bob (ตรงคลุมหู ปลายเข้าใต้คาง) — image top-left
+    const hairSbob = new THREE.Group();
+    {
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.62, 24, 20), hairMat);
+      cap.scale.set(1.06, 1.02, 1.02); cap.position.set(0, 0.12, -0.05);
+      hairSbob.add(cap);
+      // straight side curtains framing the face down past the chin
+      for (const sx of [-1, 1]) {
+        const side = mkSheet(0.26, 0.9, 0.16, 0.02);
+        side.position.set(0.52 * sx, 0.22, 0.12);
+        side.rotation.z = 0.04 * sx;
+        hairSbob.add(side);
+      }
+      // back sheet
+      const back = mkSheet(0.9, 0.8, 0.18, -0.04);
+      back.position.set(0, 0.2, -0.32);
+      hairSbob.add(back);
+    }
+    hairStyles.push(hairSbob);
+
+    // style 6: 💇 very long straight hair + full bangs (ยาวมาก หน้าม้าเต็ม) — image top-right
+    const hairLongStraight = new THREE.Group();
+    {
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.63, 24, 20), hairMat);
+      cap.scale.set(1.05, 1.0, 1.02); cap.position.set(0, 0.14, -0.05);
+      hairLongStraight.add(cap);
+      // long straight curtains down to the waist on both sides
+      for (const sx of [-1, 1]) {
+        const side = mkSheet(0.30, 1.9, 0.16, 0.015);
+        side.position.set(0.5 * sx, 0.24, 0.06);
+        side.rotation.z = 0.02 * sx;
+        hairLongStraight.add(side);
+      }
+      // long back sheet
+      const back = mkSheet(0.86, 1.95, 0.2, -0.02);
+      back.position.set(0, 0.22, -0.28);
+      hairLongStraight.add(back);
+    }
+    hairStyles.push(hairLongStraight);
+
+    // style 7: 💇 braided pigtails + bunny-bow headband (เปีย + โบว์หูกระต่าย) — image bottom-left
+    const hairBraids = new THREE.Group();
+    {
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.6, 24, 20), hairMat);
+      cap.scale.set(1.05, 0.98, 1.02); cap.position.set(0, 0.16, -0.06);
+      hairBraids.add(cap);
+      // white bunny-ear bow on top
+      const bowMat = new THREE.MeshStandardMaterial({ color: 0xfdfbf6, roughness: 0.5 });
+      for (const sx of [-1, 1]) {
+        const ear = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 12), bowMat);
+        ear.scale.set(0.5, 1.1, 0.5);
+        ear.position.set(0.14 * sx, 0.78, -0.02);
+        ear.rotation.z = -0.3 * sx;
+        hairBraids.add(ear);
+      }
+      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), bowMat);
+      knot.position.set(0, 0.72, -0.02);
+      hairBraids.add(knot);
+      // braided pigtails: stacked spheres tapering down (braid look), on each side
+      for (const sx of [-1, 1]) {
+        const braid = new THREE.Group();
+        let yy = 0.1;
+        for (let k = 0; k < 6; k++) {
+          const bead = new THREE.Mesh(new THREE.SphereGeometry(0.13 - k * 0.012, 12, 12), hairMat);
+          bead.scale.set(1, 0.8, 1);
+          bead.position.set(k * 0.03 * sx, yy, 0.05);
+          braid.add(bead);
+          yy -= 0.19 - k * 0.008;
+        }
+        braid.position.set(0.5 * sx, 0.05, 0.16);
+        braid.rotation.z = 0.15 * sx;
+        braid.userData.sway = { amp: 0.14, phase: sx > 0 ? 0.5 : 2.4 };
+        hairSwayParts.push(braid);
+        hairBraids.add(braid);
+      }
+    }
+    hairStyles.push(hairBraids);
+
+    // style 8: 💇 hair bun + straight bangs (มวยผม + หน้าม้าตรง) — image bottom-right
+    const hairBun = new THREE.Group();
+    {
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.6, 24, 20), hairMat);
+      cap.scale.set(1.04, 1.0, 1.02); cap.position.set(0, 0.15, -0.06);
+      hairBun.add(cap);
+      // the bun on top-back
+      const bun = new THREE.Mesh(new THREE.SphereGeometry(0.26, 18, 18), hairMat);
+      bun.scale.set(1, 0.92, 1);
+      bun.position.set(0, 0.62, -0.24);
+      hairBun.add(bun);
+      const bunBand = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.04, 8, 20), hairMat);
+      bunBand.position.set(0, 0.5, -0.2); bunBand.rotation.x = 1.2;
+      hairBun.add(bunBand);
+      // short face-framing side locks
+      for (const sx of [-1, 1]) {
+        const side = mkSheet(0.13, 0.62, 0.1, 0.06);
+        side.position.set(0.5 * sx, 0.12, 0.18);
+        side.rotation.z = 0.08 * sx;
+        hairBun.add(side);
+      }
+    }
+    hairStyles.push(hairBun);
+
+    hairStyles.forEach((h, i) => { h.visible = i === 0; headG.add(h); });
+
+    // ---------- 👀 Eye styles — big anime eyes ----------
+    const eyes = new THREE.Group();
+    const irisMat = new THREE.MeshStandardMaterial({ color: 0x8a5638, roughness: 0.3, emissive: 0x241006, emissiveIntensity: 0.35 });
+    const makeAnimeEye = (side) => {
+      const e = new THREE.Group();
+      // sclera: soft white behind the iris (hand-drawn depth)
+      const sclera = new THREE.Mesh(new THREE.SphereGeometry(0.1, 18, 18), new THREE.MeshBasicMaterial({ color: 0xfdfbf6 }));
+      sclera.scale.set(0.9, 1.3, 0.3);
+      // big colored iris — slightly narrower, sits a touch low (natural anime gaze)
+      const iris = new THREE.Mesh(new THREE.SphereGeometry(0.082, 18, 18), irisMat);
+      iris.scale.set(0.78, 1.2, 0.3);
+      iris.position.set(0, -0.012, 0.02);
+      // dark pupil inside the iris = depth, ไม่ใช่ตาแบนๆ
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.038, 12, 12), darkMat);
+      pupil.scale.set(0.85, 1.25, 0.3);
+      pupil.position.set(0, -0.015, 0.045);
+      // upper eyelid line: bold dark arc over the eye (เส้นเปลือกตาแบบลายเส้น)
+      const lid = new THREE.Mesh(new THREE.TorusGeometry(0.088, 0.02, 8, 18, Math.PI * 0.95), darkMat);
+      lid.position.set(0, 0.015, 0.05);
+      lid.rotation.z = Math.PI * 0.025 * side;
+      lid.scale.set(1.05, 1.15, 0.6);
+      // highlights: one big soft + one tiny
+      const hi1 = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 10), whiteMat);
+      hi1.position.set(-0.03 * side, 0.045, 0.055);
+      hi1.scale.z = 0.4;
+      const hi2 = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 8), whiteMat);
+      hi2.position.set(0.032 * side, -0.05, 0.055);
+      hi2.scale.z = 0.4;
+      // lashes: two flicks, different sizes (asymmetry = natural)
+      const lash = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.085, 6), darkMat);
+      lash.position.set(0.078 * side, 0.115, 0.03);
+      lash.rotation.z = -0.95 * side;
+      const lash2 = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.055, 6), darkMat);
+      lash2.position.set(0.052 * side, 0.135, 0.028);
+      lash2.rotation.z = -0.55 * side;
+      e.add(sclera, iris, pupil, lid, hi1, hi2, lash, lash2);
+      e.position.set(0.2 * side, -0.03, 0.52);
+      return e;
+    };
+    const eyeL = makeAnimeEye(-1);
+    const eyeR = makeAnimeEye(1);
+    // extra sparkles for "big sparkly" style
+    const bigSpark = new THREE.Group();
+    for (const sx of [-0.17, 0.23]) {
+      const sp2 = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 8), whiteMat);
+      sp2.position.set(sx, 0.09, 0.6);
+      bigSpark.add(sp2);
+    }
+    bigSpark.visible = false;
+    // smiling closed-eye arcs
+    const smileEyes = new THREE.Group();
+    for (const sx of [-0.2, 0.2]) {
+      const arc = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.022, 8, 16, Math.PI), darkMat);
+      arc.position.set(sx, 0.0, 0.53);
+      smileEyes.add(arc);
+    }
+    smileEyes.visible = false;
+    // ✨ four-point star highlights (for the green sparkle style)
+    const starSparks = new THREE.Group();
+    for (const sx of [-0.2, 0.2]) {
+      const st1 = new THREE.Mesh(new THREE.OctahedronGeometry(0.05), new THREE.MeshBasicMaterial({ color: 0xeafff0 }));
+      st1.scale.set(0.6, 1.5, 0.25);
+      st1.position.set(sx, 0.02, 0.63);
+      const st2 = st1.clone();
+      st2.scale.set(1.5, 0.6, 0.25);
+      starSparks.add(st1, st2);
+    }
+    starSparks.visible = false;
+    eyes.add(eyeL, eyeR, bigSpark, smileEyes, starSparks);
+    headG.add(eyes);
+    const applyEyeStyle = (i) => {
+      const round = i !== 2;
+      eyeL.visible = round;
+      eyeR.visible = round;
+      smileEyes.visible = i === 2;
+      bigSpark.visible = i === 1;
+      starSparks.visible = i === 3;
+      // 💚 star style = big green eyes, others = warm brown
+      irisMat.color.setHex(i === 3 ? 0x54b845 : 0x8a5638);
+      irisMat.emissive.setHex(i === 3 ? 0x1a5a14 : 0x2a1408);
+      const s3 = i === 1 ? 1.22 : i === 3 ? 1.3 : 1;
+      eyeL.scale.setScalar(s3);
+      eyeR.scale.setScalar(s3);
+    };
+    // 🖌️ eyebrows (มีคิ้ว = หน้ามีชีวิต) — thin arcs, slightly uneven like hand-drawn
+    const browMat = new THREE.MeshBasicMaterial({ color: 0x6a4530 });
+    const browL = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.012, 6, 14, Math.PI * 0.7), browMat);
+    browL.position.set(-0.2, 0.17, 0.55);
+    browL.rotation.z = Math.PI * 0.16;
+    const browR = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.012, 6, 14, Math.PI * 0.7), browMat);
+    browR.position.set(0.2, 0.175, 0.55);
+    browR.rotation.z = Math.PI * 0.12; // ← คิ้วสองข้างเอียงไม่เท่ากันนิดๆ
+    headG.add(browL, browR);
+    // tiny nose dot
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 8), new THREE.MeshBasicMaterial({ color: 0xe8a988 }));
+    nose.position.set(0.015, -0.1, 0.585);
+    nose.scale.set(1, 0.7, 0.5);
+    headG.add(nose);
+    // blush: soft wide ovals right under the eyes (ตำแหน่งอนิเมะแท้)
+    const cheekL = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 12), blushMat);
+    cheekL.scale.set(1.6, 0.55, 0.4);
+    cheekL.position.set(-0.33, -0.15, 0.48);
+    cheekL.rotation.z = 0.12;
+    const cheekR = cheekL.clone();
+    cheekR.position.x = 0.33;
+    cheekR.rotation.z = -0.12;
+    headG.add(cheekL, cheekR);
+    const mouths = {};
+    const mSmile = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.018, 10, 20, Math.PI), darkMat);
+    mSmile.position.set(0, -0.21, 0.545);
+    mSmile.rotation.z = Math.PI;
+    mouths.smile = mSmile;
+    const mLaugh = new THREE.Group();
+    const mo2 = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 16), new THREE.MeshStandardMaterial({ color: 0x6e2f38 }));
+    mo2.scale.set(1.25, 0.95, 0.4);
+    mo2.position.set(0, -0.21, 0.5);
+    mLaugh.add(mo2);
+    mouths.laugh = mLaugh;
+    const mSad = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.022, 10, 20, Math.PI), darkMat);
+    mSad.position.set(0, -0.24, 0.53);
+    mouths.sad = mSad;
+    const mOw = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), new THREE.MeshStandardMaterial({ color: 0x6e2f38 }));
+    mOw.scale.set(1, 1.2, 0.4);
+    mOw.position.set(0, -0.2, 0.53);
+    mouths.ow = mOw;
+    Object.values(mouths).forEach((m) => { m.visible = false; headG.add(m); });
+    const setMouth = (n) => Object.entries(mouths).forEach(([k, m]) => (m.visible = k === n));
+    setMouth("smile");
+
+    // ---------- Outfits: visible on Cherry when equipped ----------
+    const outfitModels = {};
+    { // o1 ผ้าพันคอนุ่มฟู : cozy scarf
+      const g = new THREE.Group();
+      const scarfMat = new THREE.MeshStandardMaterial({ color: 0xe06070, roughness: 0.85 });
+      const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.1, 10, 20), scarfMat);
+      scarf.position.y = 2.12;
+      scarf.rotation.x = Math.PI / 2;
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.42, 0.06), scarfMat);
+      tail.position.set(0.2, 1.85, 0.42);
+      tail.rotation.z = -0.15;
+      g.add(scarf, tail);
+      outfitModels.o1 = g;
+    }
+    { // o2 ชุดใบไม้พราย : leaf hat + shoulder leaves
+      const g = new THREE.Group();
+      const leafMat = new THREE.MeshStandardMaterial({ color: 0x5a9a45, roughness: 0.7 });
+      const hat = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.36, 8), leafMat);
+      hat.position.set(0.1, 3.55, 0);
+      hat.rotation.z = 0.3;
+      g.add(hat);
+      for (const sx of [-0.56, 0.56]) {
+        const sh = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), leafMat);
+        sh.scale.set(1.6, 0.5, 1);
+        sh.position.set(sx, 2.12, 0);
+        g.add(sh);
+      }
+      outfitModels.o2 = g;
+    }
+    { // o3 เกราะเมฆานิล : storm chest plate + pauldrons
+      const g = new THREE.Group();
+      const armorMat = new THREE.MeshStandardMaterial({
+        color: 0x3a4a6e, metalness: 0.75, roughness: 0.3,
+        emissive: 0x101a30, emissiveIntensity: 0.6, side: THREE.DoubleSide,
+      });
+      const chest = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.47, 0.54, 0.62, 20, 1, true, -Math.PI * 0.35, Math.PI * 0.7),
+        armorMat
+      );
+      chest.position.y = 1.62;
+      g.add(chest);
+      for (const sx of [-0.6, 0.6]) {
+        const pad = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), armorMat);
+        pad.scale.set(1, 0.6, 1);
+        pad.position.set(sx, 2.08, 0);
+        g.add(pad);
+      }
+      const bolt = new THREE.Mesh(new THREE.OctahedronGeometry(0.07), new THREE.MeshStandardMaterial({ color: 0x8fd0f5, emissive: 0x2a6a9a, emissiveIntensity: 1 }));
+      bolt.position.set(0, 1.72, 0.5);
+      g.add(bolt);
+      outfitModels.o3 = g;
+    }
+    { // oS อาภรณ์ดวงดาว (SECRET) : golden cape + star crown
+      const g = new THREE.Group();
+      const goldMatFx = new THREE.MeshStandardMaterial({
+        color: 0xf0c85a, emissive: 0x7a5a10, emissiveIntensity: 0.55,
+        metalness: 0.5, roughness: 0.4, side: THREE.DoubleSide,
+      });
+      const cape = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.5, 0.8, 1.55, 18, 1, true, Math.PI * 0.62, Math.PI * 0.76),
+        goldMatFx
+      );
+      cape.position.y = 1.35;
+      g.add(cape);
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.035, 8, 20), goldMatFx);
+      band.position.y = 3.42;
+      band.rotation.x = Math.PI / 2;
+      const crownStar = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.1),
+        new THREE.MeshStandardMaterial({ color: 0xfff2b0, emissive: 0xd0b040, emissiveIntensity: 1 })
+      );
+      crownStar.position.set(0, 3.62, 0.2);
+      g.add(band, crownStar);
+      g.userData.crownStar = crownStar;
+      outfitModels.oS = g;
+    }
+    { // oD 🐉 dragon scale armor
+      const g = new THREE.Group();
+      const scaleMat = new THREE.MeshStandardMaterial({
+        color: 0x6a2018, metalness: 0.65, roughness: 0.3,
+        emissive: 0x2a0a05, emissiveIntensity: 0.7, side: THREE.DoubleSide,
+      });
+      const chest = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.47, 0.55, 0.66, 20, 1, true, -Math.PI * 0.38, Math.PI * 0.76),
+        scaleMat
+      );
+      chest.position.y = 1.62;
+      g.add(chest);
+      // scale rows
+      for (let row = 0; row < 3; row++) {
+        for (let c2 = -1; c2 <= 1; c2++) {
+          const sc = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.14, 4), scaleMat);
+          sc.position.set(c2 * 0.22, 1.42 + row * 0.2, 0.5);
+          sc.rotation.x = Math.PI;
+          g.add(sc);
+        }
+      }
+      for (const sx of [-0.62, 0.62]) {
+        const pad = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.3, 6), scaleMat);
+        pad.position.set(sx, 2.12, 0);
+        pad.rotation.z = sx > 0 ? -0.5 : 0.5;
+        g.add(pad);
+      }
+      const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.09), new THREE.MeshStandardMaterial({ color: 0xff6a2a, emissive: 0xc03a10, emissiveIntensity: 1.3 }));
+      core.position.set(0, 1.72, 0.52);
+      g.add(core);
+      outfitModels.oD = g;
+    }
+    Object.values(outfitModels).forEach((m) => { m.visible = false; char.add(m); });
+    let curOutfit = null;
+    G.setOutfitVisual = (id) => {
+      curOutfit = id && outfitModels[id] ? id : null;
+      Object.entries(outfitModels).forEach(([k, m]) => (m.visible = k === curOutfit));
+      updateAura();
+    };
+
+    // ---------- Hats & masks (attach to head) ----------
+    const hatModels = {};
+    { // h1 straw hat
+      const g = new THREE.Group();
+      const strawMat = new THREE.MeshStandardMaterial({ color: 0xdfc07a, roughness: 0.9 });
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 0.05, 20), strawMat);
+      brim.position.y = 0.52;
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.48, 0.3, 16), strawMat);
+      top.position.y = 0.66;
+      const ribbon = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.035, 8, 20), new THREE.MeshStandardMaterial({ color: 0xe06070 }));
+      ribbon.rotation.x = Math.PI / 2;
+      ribbon.position.y = 0.56;
+      g.add(brim, top, ribbon);
+      hatModels.h1 = g;
+    }
+    { // h2 witch hat
+      const g = new THREE.Group();
+      const witchMat = new THREE.MeshStandardMaterial({ color: 0x4a2a6a, roughness: 0.6, emissive: 0x1a0a2a });
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.05, 20), witchMat);
+      brim.position.y = 0.5;
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.85, 14), witchMat);
+      cone.position.y = 0.95;
+      cone.rotation.z = 0.12;
+      const buckle = new THREE.Mesh(new THREE.OctahedronGeometry(0.08), new THREE.MeshStandardMaterial({ color: 0xf5c542, emissive: 0x7a5a10, emissiveIntensity: 0.8 }));
+      buckle.position.set(0, 0.62, 0.38);
+      g.add(brim, cone, buckle);
+      hatModels.h2 = g;
+    }
+    { // hS starlight crown
+      const g = new THREE.Group();
+      const goldM = new THREE.MeshStandardMaterial({ color: 0xf5c542, emissive: 0x7a5a10, emissiveIntensity: 0.7, metalness: 0.7, roughness: 0.25 });
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.045, 8, 22), goldM);
+      band.rotation.x = Math.PI / 2;
+      band.position.y = 0.55;
+      g.add(band);
+      for (let i = 0; i < 5; i++) {
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 4), goldM);
+        const a = (i / 5) * Math.PI * 2;
+        spike.position.set(Math.cos(a) * 0.42, 0.66, Math.sin(a) * 0.42);
+        g.add(spike);
+      }
+      const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.09), new THREE.MeshStandardMaterial({ color: 0xfff2b0, emissive: 0xd0b040, emissiveIntensity: 1.1 }));
+      star.position.set(0, 0.78, 0.4);
+      g.add(star);
+      hatModels.hS = g;
+    }
+    { // hD 🐉 dragon-head helm — snout, glowing eyes, fangs, swept horns
+      const g = new THREE.Group();
+      const scaleM = new THREE.MeshStandardMaterial({ color: 0x6a2018, metalness: 0.55, roughness: 0.35, emissive: 0x3a0a05, emissiveIntensity: 0.6 });
+      const boneM = new THREE.MeshStandardMaterial({ color: 0xe8d8b0, roughness: 0.5 });
+      // skull cap over the head
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.66, 22, 22, 0, Math.PI * 2, 0, Math.PI * 0.5), scaleM);
+      cap.position.y = 0.16;
+      g.add(cap);
+      // snout projecting forward over the forehead
+      const snout = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.5, 4), scaleM);
+      snout.rotation.x = Math.PI / 2 + 0.35;
+      snout.position.set(0, 0.42, 0.5);
+      snout.scale.set(1, 1, 0.7);
+      g.add(snout);
+      const upperJaw = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.12, 0.36), scaleM);
+      upperJaw.position.set(0, 0.34, 0.5);
+      g.add(upperJaw);
+      // fangs
+      for (const sx of [-1, 1]) {
+        const fang = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.14, 6), boneM);
+        fang.rotation.x = Math.PI;
+        fang.position.set(0.1 * sx, 0.27, 0.62);
+        g.add(fang);
+      }
+      // glowing eyes
+      for (const sx of [-1, 1]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 10), new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xe0a020, emissiveIntensity: 1.5 }));
+        eye.position.set(0.18 * sx, 0.5, 0.42);
+        g.add(eye);
+        const brow = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.14, 5), scaleM);
+        brow.position.set(0.18 * sx, 0.6, 0.36);
+        brow.rotation.x = -0.5;
+        g.add(brow);
+      }
+      // swept-back horns
+      for (const sx of [-0.4, 0.4]) {
+        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.6, 8), boneM);
+        horn.position.set(sx, 0.62, -0.12);
+        horn.rotation.z = sx > 0 ? -0.6 : 0.6;
+        horn.rotation.x = -0.5;
+        g.add(horn);
+        const horn2 = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.3, 6), boneM);
+        horn2.position.set(sx * 1.6, 0.5, -0.2);
+        horn2.rotation.z = sx > 0 ? -0.9 : 0.9;
+        g.add(horn2);
+      }
+      // spine ridge
+      for (let i = 0; i < 4; i++) {
+        const ridge = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 4), boneM);
+        ridge.position.set(0, 0.7 - i * 0.14, -0.3 - i * 0.12);
+        ridge.rotation.x = -0.4;
+        g.add(ridge);
+      }
+      hatModels.hD = g;
+    }
+    Object.values(hatModels).forEach((m) => { m.visible = false; headG.add(m); });
+
+    const maskModels = {};
+    { // m1 heart sunglasses
+      const g = new THREE.Group();
+      const lensMat = new THREE.MeshStandardMaterial({ color: 0xe0506a, roughness: 0.3, metalness: 0.2 });
+      for (const sx of [-0.2, 0.2]) {
+        const lens = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 12), lensMat);
+        lens.scale.set(1.1, 0.95, 0.35);
+        lens.position.set(sx, 0.03, 0.56);
+        g.add(lens);
+      }
+      const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.03, 0.03), lensMat);
+      bridge.position.set(0, 0.05, 0.6);
+      g.add(bridge);
+      maskModels.m1 = g;
+    }
+    { // m2 fox half-mask worn on the side of the head
+      const g = new THREE.Group();
+      const foxMat = new THREE.MeshStandardMaterial({ color: 0xfaf6ee, roughness: 0.5 });
+      const plate = new THREE.Mesh(new THREE.SphereGeometry(0.28, 14, 14), foxMat);
+      plate.scale.set(1, 1.15, 0.4);
+      plate.position.set(0.45, 0.38, 0.32);
+      plate.rotation.y = 0.5;
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.2, 6), foxMat);
+      ear.position.set(0.52, 0.68, 0.28);
+      const mark = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), new THREE.MeshStandardMaterial({ color: 0xd9333f }));
+      mark.scale.set(1.6, 0.5, 0.4);
+      mark.position.set(0.48, 0.42, 0.46);
+      mark.rotation.z = 0.5;
+      g.add(plate, ear, mark);
+      maskModels.m2 = g;
+    }
+    { // mD 🐉 dragon oni half-mask
+      const g = new THREE.Group();
+      const dm = new THREE.MeshStandardMaterial({ color: 0x8a2018, roughness: 0.45, emissive: 0x300a05, emissiveIntensity: 0.6 });
+      const plate = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 14), dm);
+      plate.scale.set(1, 1.2, 0.42);
+      plate.position.set(-0.45, 0.36, 0.32);
+      plate.rotation.y = -0.5;
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.24, 6), new THREE.MeshStandardMaterial({ color: 0xe8d8b0 }));
+      horn.position.set(-0.55, 0.7, 0.26);
+      horn.rotation.z = 0.3;
+      const eyeGlow = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xd08a20, emissiveIntensity: 1.3 }));
+      eyeGlow.position.set(-0.48, 0.38, 0.47);
+      g.add(plate, horn, eyeGlow);
+      maskModels.mD = g;
+    }
+    Object.values(maskModels).forEach((m) => { m.visible = false; headG.add(m); });
+
+    // gear materials for gloves/pants/shoes
+    const gloveFluffMat = new THREE.MeshStandardMaterial({ color: 0xf6b8c8, roughness: 0.95 });
+    const gloveBoxMat = new THREE.MeshStandardMaterial({ color: 0xd9333f, roughness: 0.5 });
+    const gloveStormMat = new THREE.MeshStandardMaterial({ color: 0xb8e8c0, roughness: 0.4, emissive: 0x3a7a4a, emissiveIntensity: 0.6 });
+    const gloveDragonMat = new THREE.MeshStandardMaterial({ color: 0x6a2018, metalness: 0.6, roughness: 0.35, emissive: 0x5a1508, emissiveIntensity: 0.8 });
+    const shoePinkMat = new THREE.MeshStandardMaterial({ color: 0xf28ba8, roughness: 0.5 });
+    const shoeBoltMat = new THREE.MeshStandardMaterial({ color: 0x3a3f4a, roughness: 0.3, emissive: 0x2a5a8a, emissiveIntensity: 0.5 });
+    const shoeDragonMat = new THREE.MeshStandardMaterial({ color: 0x5a1f1a, metalness: 0.55, roughness: 0.3, emissive: 0x7a2008, emissiveIntensity: 0.7 });
+    let basePantsColor = 0xf7f5f0; // starting-outfit pants color (customizable)
+
+    // 🎀 white collar + red ribbon set (part of the black-gold dress outfit)
+    const collarSet = new THREE.Group();
+    {
+      const colMat = new THREE.MeshToonMaterial({ color: 0xfdfbf6, gradientMap: toonGrad });
+      for (const sx of [-0.17, 0.17]) {
+        const flap = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 16), colMat);
+        flap.scale.set(1.15, 0.7, 0.55);
+        flap.position.set(sx, 2.1, 0.3);
+        flap.rotation.x = 0.5;
+        collarSet.add(flap);
+      }
+      const ribMat = new THREE.MeshStandardMaterial({ color: 0xd9333f, roughness: 0.5 });
+      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 10), ribMat);
+      knot.position.set(0, 2.02, 0.42);
+      for (const sx of [-1, 1]) {
+        const wing = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.16, 8), ribMat);
+        wing.position.set(0.1 * sx, 2.0, 0.42);
+        wing.rotation.z = sx * (Math.PI / 2 + 0.35);
+        collarSet.add(wing);
+      }
+      const tail1 = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.18, 8), ribMat);
+      tail1.position.set(0.03, 1.9, 0.43);
+      tail1.rotation.z = 0.2;
+      collarSet.add(knot, tail1);
+      collarSet.visible = false;
+      char.add(collarSet);
+    }
+
+    // apply hat/mask/gloves/pants/shoes visuals from G.equip
+    const applyGear = () => {
+      const eq = G.equip || {};
+      Object.entries(hatModels).forEach(([k, m]) => (m.visible = k === eq.hat));
+      Object.entries(maskModels).forEach(([k, m]) => (m.visible = k === eq.mask));
+      handMeshes.forEach((h) => {
+        if (eq.gloves === "g1") { h.material = gloveFluffMat; h.scale.setScalar(1.18); }
+        else if (eq.gloves === "g2") { h.material = gloveBoxMat; h.scale.setScalar(1.4); }
+        else if (eq.gloves === "gS") { h.material = gloveStormMat; h.scale.setScalar(1.3); }
+        else if (eq.gloves === "gD") { h.material = gloveDragonMat; h.scale.setScalar(1.5); }
+        else { h.material = skinMat; h.scale.setScalar(1); }
+      });
+      pantsMat.color.setHex(
+        eq.pants === "p1" ? 0x5a7ab0 : eq.pants === "p2" ? 0x44445a : eq.pants === "pD" ? 0x5a1f1a : basePantsColor
+      );
+      pantsMat.metalness = eq.pants === "p2" || eq.pants === "pD" ? 0.55 : 0;
+      shoeMeshes.forEach((s) => {
+        s.material = eq.shoes === "s1" ? shoePinkMat : eq.shoes === "s2" ? shoeBoltMat : eq.shoes === "sD" ? shoeDragonMat : whiteMat;
+      });
+      updateAura();
+    };
+    G.applyGear = applyGear;
+
+    // ---------- 🎀 apply character customization ----------
+    let curBasePants = basePantsColor; // eslint-disable-line
+    G.custom = { gender: 0, skin: 0, hairColor: 0, hairStyle: 0, eyes: 0, outfit: 0 };
+    // 👦👧 apply body shape for the chosen gender
+    const applyGender = (g) => {
+      const male = g === 1;
+      // male: broader shoulders, straighter torso, taller; female: curvier, softer
+      torso.scale.set(male ? 1.12 : 1.0, male ? 1.04 : 1.0, male ? 1.12 : 1.0);
+      pelvis.scale.set(male ? 0.92 : 1.02, 0.66, male ? 0.82 : 0.88); // narrower hips for male
+      armL.position.x = -0.52 * (male ? 1.16 : 1.0); // shoulders wider apart
+      armR.position.x = 0.52 * (male ? 1.16 : 1.0);
+      // default hair per gender (only when first setting gender, keep player's later picks)
+    };
+    G.setCustom = (cat, i) => {
+      G.custom[cat] = i;
+      if (cat === "gender") {
+        applyGender(i);
+      } else if (cat === "skin") {
+        skinMat.color.setHex(CUSTOM.skins[i].c);
+      } else if (cat === "hairColor") {
+        hairMat.color.setHex(CUSTOM.hairColors[i].c);
+      } else if (cat === "hairStyle") {
+        hairStyles.forEach((h, k) => (h.visible = k === i));
+        // styles 5-8 are self-contained (full cap + own bangs) → hide the shared base hair
+        const selfContained = i >= 5;
+        if (baseHair) baseHair.visible = !selfContained;
+        if (ahoge) ahoge.visible = i < 5; // hide the wisp on the sleek image styles
+      } else if (cat === "eyes") {
+        applyEyeStyle(i);
+      } else if (cat === "outfit") {
+        const o = CUSTOM.outfits[i];
+        ctxS.fillStyle = o.base;
+        ctxS.fillRect(0, 0, 128, 128);
+        ctxS.fillStyle = o.stripe;
+        for (let x = 4; x < 128; x += 16) ctxS.fillRect(x, 0, 3, 128);
+        stripeTex.needsUpdate = true;
+        basePantsColor = o.pants;
+        collarSet.visible = !!o.collar; // 🎀 dress comes with collar + ribbon
+        applyGear();
+      }
+      setUi((u) => ({ ...u, custom: { ...G.custom } }));
+    };
+    G.randomCustom = () => {
+      G.setCustom("skin", Math.floor(Math.random() * CUSTOM.skins.length));
+      G.setCustom("hairColor", Math.floor(Math.random() * CUSTOM.hairColors.length));
+      G.setCustom("hairStyle", Math.floor(Math.random() * CUSTOM.hairStyles.length));
+      G.setCustom("eyes", Math.floor(Math.random() * CUSTOM.eyes.length));
+      G.setCustom("outfit", Math.floor(Math.random() * CUSTOM.outfits.length));
+    };
+
+    // ---------- ✨ Elemental gear glow (rare+ items) ----------
+    // beauty scales with rarity tier and +enhancement level
+    const auraDots = [];
+    for (let i = 0; i < 14; i++) {
+      const d = new THREE.Mesh(new THREE.OctahedronGeometry(0.05), new THREE.MeshBasicMaterial({ color: 0xffe28a, transparent: true }));
+      d.visible = false;
+      scene.add(d);
+      auraDots.push(d);
+    }
+    const glowRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.62, 0.78, 36),
+      new THREE.MeshBasicMaterial({ color: 0xffe28a, transparent: true, opacity: 0.4, side: THREE.DoubleSide })
+    );
+    glowRing.rotation.x = -Math.PI / 2;
+    glowRing.position.y = 0.03;
+    glowRing.visible = false;
+    scene.add(glowRing);
+    const glowRing2 = new THREE.Mesh(
+      new THREE.RingGeometry(0.9, 0.98, 36),
+      new THREE.MeshBasicMaterial({ color: 0xff4a2a, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
+    );
+    glowRing2.rotation.x = -Math.PI / 2;
+    glowRing2.position.y = 0.035;
+    glowRing2.visible = false;
+    scene.add(glowRing2);
+
+    updateAura = () => {
+      // find the strongest rare+ equipped item → its element sets the aura color
+      let best = null;
+      let dragonN = 0;
+      SLOTS.forEach((s) => {
+        const it = LOOT.find((x) => x.id === (G.equip && G.equip[s]));
+        if (!it) return;
+        if (it.rarity === "dragon") dragonN++;
+        const tier = TIER[it.rarity];
+        if (tier < 2) return;
+        const plus = (G.plus && G.plus[it.id]) || 0;
+        if (!best || tier > best.tier || (tier === best.tier && plus > best.plus)) {
+          best = { tier, plus, color: ELEM_GLOW[it.elem] || 0xffe28a };
+        }
+      });
+      G.glow = best ? { ...best, dragonN, fullSet: dragonN >= 7 } : { tier: 0, plus: 0, dragonN, fullSet: false };
+      const g2 = G.glow;
+      glowRing.visible = g2.tier >= 2;
+      glowRing2.visible = g2.tier >= 5 || g2.fullSet;
+      if (g2.tier >= 2) {
+        glowRing.material.color.setHex(g2.color);
+        glowRing2.material.color.setHex(g2.color);
+      }
+      // orbiting particles: epic+ · more particles the higher the + level
+      const dots = g2.tier >= 3 ? Math.min(14, 3 + g2.plus * 2 + (g2.tier - 3) * 3) : 0;
+      auraDots.forEach((d, i) => {
+        d.visible = i < dots;
+        if (d.visible) d.material.color.setHex(g2.color);
+      });
+    };
+
+    const blobShadow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.7, 32),
+      new THREE.MeshBasicMaterial({ color: 0x4f6440, transparent: true, opacity: 0.3 })
+    );
+    blobShadow.rotation.x = -Math.PI / 2;
+    blobShadow.position.y = 0.014;
+    scene.add(blobShadow);
+
+    // ---------- Monster factory ----------
+    const buildMonster = (spId, stage = 1) => {
+      const sp = SPECIES[spId];
+      const g = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({ color: sp.color, roughness: 0.6 });
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.48, 20, 20), mat);
+      body.position.y = FLOATY[spId] ? 0.95 : 0.5;
+      body.castShadow = true;
+      g.add(body);
+      // eyes
+      for (const sx of [-0.17, 0.17]) {
+        const e = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 10), darkMat);
+        e.position.set(sx, body.position.y + 0.08, 0.42);
+        g.add(e);
+        const sp2 = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), whiteMat);
+        sp2.position.set(sx + 0.02, body.position.y + 0.11, 0.47);
+        g.add(sp2);
+      }
+      // blush
+      for (const sx of [-0.3, 0.3]) {
+        const c = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), blushMat);
+        c.scale.set(1.3, 0.7, 0.5);
+        c.position.set(sx, body.position.y - 0.05, 0.4);
+        g.add(c);
+      }
+      // species accessories
+      if (spId === "mochi") {
+        for (const sx of [-0.2, 0.2]) {
+          const ear = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), mat);
+          ear.scale.set(0.7, 2.0, 0.7);
+          ear.position.set(sx, 1.05, 0);
+          g.add(ear);
+        }
+      } else if (spId === "baibua") {
+        const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.35, 8), new THREE.MeshStandardMaterial({ color: 0x4f8a45 }));
+        leaf.position.set(0, 1.1, 0);
+        leaf.rotation.z = 0.3;
+        g.add(leaf);
+      } else if (spId === "plerng") {
+        const flame = new THREE.Mesh(
+          new THREE.ConeGeometry(0.2, 0.45, 8),
+          new THREE.MeshStandardMaterial({ color: 0xf5652e, emissive: 0xa03510, emissiveIntensity: 0.6 })
+        );
+        flame.position.set(0, 1.15, 0);
+        g.add(flame);
+        for (const sx of [-0.24, 0.24]) {
+          const ear = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.3, 6), mat);
+          ear.position.set(sx, 0.98, 0);
+          g.add(ear);
+        }
+      } else if (spId === "mekha") {
+        for (const [px, py] of [[-0.35, 0.85], [0.35, 0.85], [0, 0.7]]) {
+          const puff = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 12), mat);
+          puff.position.set(px, py, 0.05);
+          g.add(puff);
+        }
+      } else if (spId === "phi") {
+        // 👻 ghostly: translucent body, wispy tail, stubby arms
+        mat.transparent = true;
+        mat.opacity = 0.78;
+        mat.emissive = new THREE.Color(0x6a6aa0).multiplyScalar(0.25);
+        const tail = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.55, 10), mat);
+        tail.rotation.x = Math.PI;
+        tail.position.y = 0.55;
+        g.add(tail);
+        for (const sx of [-0.5, 0.5]) {
+          const nub = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), mat);
+          nub.scale.set(0.8, 1.4, 0.8);
+          nub.position.set(sx, 0.9, 0.05);
+          nub.rotation.z = sx > 0 ? -0.5 : 0.5;
+          g.add(nub);
+        }
+      } else if (spId === "kirara") {
+        const star = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.2),
+          new THREE.MeshStandardMaterial({ color: 0xffe27a, emissive: 0xaa8a20, emissiveIntensity: 0.7 })
+        );
+        star.position.set(0, 1.15, 0);
+        g.add(star);
+        g.userData.star = star;
+      } else if (spId === "taara") {
+        // 💫 celestial star-deity: glowing core + orbiting star motes + ring
+        body.scale.setScalar(0.85);
+        mat.emissive = new THREE.Color(0x8a5ad0); mat.emissiveIntensity = 0.6;
+        const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), new THREE.MeshStandardMaterial({ color: 0xf0e0ff, emissive: 0xc0a0f5, emissiveIntensity: 1.2 }));
+        core.position.set(0, 1.15, 0); g.add(core); g.userData.star = core;
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.03, 8, 28), new THREE.MeshStandardMaterial({ color: 0xc0a0f5, emissive: 0x9a6ad0, emissiveIntensity: 0.9 }));
+        ring.rotation.x = Math.PI / 2.3; ring.position.y = 1.15; g.add(ring);
+        for (let k = 0; k < 5; k++) {
+          const a = (k / 5) * Math.PI * 2;
+          const mote = new THREE.Mesh(new THREE.OctahedronGeometry(0.07, 0), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+          mote.position.set(Math.cos(a) * 0.5, 1.15, Math.sin(a) * 0.5); g.add(mote);
+        }
+      } else if (sp.animal) {
+        const by = body.position.y;
+        const acc = new THREE.MeshStandardMaterial({ color: sp.color, roughness: 0.55 });
+        const dark = new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.6 });
+        if (sp.animal === "fish") {
+          body.scale.set(1.15, 0.85, 1.4);
+          const tail = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.4, 4), acc);
+          tail.rotation.x = -Math.PI / 2; tail.position.set(0, by, -0.55); tail.scale.set(1, 0.4, 1); g.add(tail);
+          for (const sx of [-1, 1]) { const fin = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.3, 3), acc); fin.position.set(0.42 * sx, by, 0); fin.rotation.z = sx > 0 ? -1.2 : 1.2; g.add(fin); }
+        } else if (sp.animal === "wolf") {
+          const snout = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.32, 6), acc); snout.rotation.x = Math.PI / 2; snout.position.set(0, by, 0.5); g.add(snout);
+          for (const sx of [-0.2, 0.2]) { const ear = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.28, 5), acc); ear.position.set(sx, by + 0.5, -0.05); g.add(ear); }
+          for (const sx of [-0.06, 0.06]) { const fang = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.12, 4), whiteMat); fang.rotation.x = Math.PI; fang.position.set(sx, by - 0.12, 0.6); g.add(fang); }
+        } else if (sp.animal === "snake") {
+          body.scale.set(0.85, 0.85, 1);
+          for (let k = 1; k <= 3; k++) { const seg = new THREE.Mesh(new THREE.SphereGeometry(0.34 - k * 0.05, 14, 14), acc); seg.position.set(Math.sin(k) * 0.12, by + k * 0.32, 0); g.add(seg); }
+          const hood = new THREE.Mesh(new THREE.SphereGeometry(0.32, 14, 14), acc); hood.scale.set(1.6, 0.4, 1); hood.position.set(0, by + 1.05, 0); g.add(hood);
+          const tongue = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.2, 4), new THREE.MeshStandardMaterial({ color: 0xd9333f })); tongue.rotation.x = Math.PI / 2; tongue.position.set(0, by + 1.0, 0.35); g.add(tongue);
+        } else if (sp.animal === "bird") {
+          const beak = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.28, 5), new THREE.MeshStandardMaterial({ color: 0xf5c542 })); beak.rotation.x = Math.PI / 2; beak.position.set(0, by, 0.5); g.add(beak);
+          for (const sx of [-1, 1]) { const wing = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.6, 3), acc); wing.position.set(0.5 * sx, by, -0.05); wing.rotation.z = sx > 0 ? -0.5 : 0.5; wing.scale.set(1, 1, 0.4); g.add(wing); g.userData.wing = g.userData.wing || wing; }
+        } else if (sp.animal === "tiger") {
+          const snout = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 12), acc); snout.scale.set(1, 0.8, 0.9); snout.position.set(0, by - 0.05, 0.42); g.add(snout);
+          for (const sx of [-0.22, 0.22]) { const ear = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.22, 5), acc); ear.position.set(sx, by + 0.5, 0); g.add(ear); }
+          for (const sx of [-0.08, 0.08]) { const fang = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.16, 4), whiteMat); fang.rotation.x = Math.PI; fang.position.set(sx, by - 0.18, 0.58); g.add(fang); }
+          for (const zz of [-0.2, 0, 0.2]) { const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.3, 0.02), dark); stripe.position.set(zz, by + 0.05, 0.46); g.add(stripe); }
+        } else if (sp.animal === "beast") {
+          body.scale.setScalar(1.15);
+          const mane = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 16), new THREE.MeshStandardMaterial({ color: 0x8a4a10, roughness: 0.9 })); mane.position.set(0, by + 0.05, -0.05); mane.scale.set(1.1, 1.1, 0.9); g.add(mane);
+          for (const sx of [-0.28, 0.28]) { const horn = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.4, 6), whiteMat); horn.position.set(sx, by + 0.55, 0); horn.rotation.z = sx > 0 ? -0.4 : 0.4; g.add(horn); }
+          for (const sx of [-0.09, 0.09]) { const fang = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.2, 4), whiteMat); fang.rotation.x = Math.PI; fang.position.set(sx, by - 0.2, 0.5); g.add(fang); }
+        }
+        g.userData.animalEyes = true; // eyes may glow red at high level
+      }
+      // evolved form: golden crown + gentle glow + bigger
+      if (stage >= 2) {
+        const crown = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.15, 0.21, 0.16, 8),
+          new THREE.MeshStandardMaterial({ color: 0xf5c542, emissive: 0x7a5a10, emissiveIntensity: 0.6, metalness: 0.6, roughness: 0.3 })
+        );
+        crown.position.set(0, spId === "mekha" ? 1.55 : 1.3, 0);
+        g.add(crown);
+        mat.emissive = new THREE.Color(sp.color).multiplyScalar(0.18);
+        g.scale.setScalar(1.15);
+      }
+      // ultimate form (stage 3+): floating halo + intense glow + even bigger
+      if (stage >= 3) {
+        const halo = new THREE.Mesh(
+          new THREE.TorusGeometry(0.55, 0.04, 8, 28),
+          new THREE.MeshStandardMaterial({ color: 0xffe28a, emissive: 0xc0a030, emissiveIntensity: 1 })
+        );
+        halo.rotation.x = Math.PI / 2;
+        halo.position.y = spId === "mekha" ? 1.85 : 1.6;
+        g.add(halo);
+        mat.emissive = new THREE.Color(sp.color).multiplyScalar(0.35);
+        g.scale.multiplyScalar(1.12);
+      }
+      g.userData.body = body;
+      g.userData.spId = spId;
+      // 🏷️ floating level label (color set later in updateMonsterLabel)
+      const lblCanvas = document.createElement("canvas");
+      lblCanvas.width = 128; lblCanvas.height = 64;
+      const lblTex = new THREE.CanvasTexture(lblCanvas);
+      const lblMat = new THREE.SpriteMaterial({ map: lblTex, transparent: true, depthTest: false });
+      const lbl = new THREE.Sprite(lblMat);
+      lbl.scale.set(1.1, 0.55, 1);
+      lbl.position.y = (FLOATY[spId] ? 1.7 : 1.35) * g.scale.y;
+      g.add(lbl);
+      g.userData.lbl = { sprite: lbl, canvas: lblCanvas, tex: lblTex, drawn: null };
+      return g;
+    };
+
+    // draw/refresh a monster's level tag (red if higher than player)
+    const drawMonsterLabel = (m) => {
+      const L = m.userData.lbl;
+      if (!L) return;
+      const lv = m.userData.lv || 1;
+      const higher = lv > (G.player ? G.player.level : 1);
+      const boss = m.userData.boss;
+      const key = lv + (higher ? "H" : "L") + (boss ? "B" : "");
+      if (L.drawn === key) return; // no change
+      L.drawn = key;
+      const ctx = L.canvas.getContext("2d");
+      ctx.clearRect(0, 0, 128, 64);
+      ctx.font = "bold 30px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const txt = (boss ? "👑 Lv." : "Lv.") + lv;
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = "rgba(0,0,0,0.85)";
+      ctx.strokeText(txt, 64, 32);
+      ctx.fillStyle = boss ? "#ff5a3a" : higher ? "#ff5a5a" : "#c8f0a0"; // 🔴 red when tougher
+      ctx.fillText(txt, 64, 32);
+      L.tex.needsUpdate = true;
+    };
+
+    // 😱 make a monster look scarier the higher its level (and vs the player)
+    const applyMenace = (m) => {
+      const lv = m.userData.lv || 1;
+      const menace = Math.min(1, lv / 40); // 0..1 by level 40
+      const body = m.userData.body;
+      // bigger & slightly hunched
+      const grow = 1 + menace * 0.5;
+      m.scale.multiplyScalar(grow);
+      // glowing red eyes on fierce ones
+      if (m.userData.animalEyes && menace > 0.15) {
+        m.traverse((o) => {
+          if (o.isMesh && o.material === darkMat) {
+            o.material = new THREE.MeshStandardMaterial({ color: 0x2a0000, emissive: 0xff2a2a, emissiveIntensity: 0.6 + menace });
+          }
+        });
+      }
+      // dark aura ring for very high level
+      if (menace > 0.4) {
+        const aura = new THREE.Mesh(
+          new THREE.RingGeometry(0.55, 0.72, 24),
+          new THREE.MeshBasicMaterial({ color: 0x8a1010, transparent: true, opacity: 0.4 + menace * 0.3, side: THREE.DoubleSide })
+        );
+        aura.rotation.x = -Math.PI / 2; aura.position.y = 0.02; m.add(aura);
+      }
+      // spikes on the back for the fiercest
+      if (menace > 0.55 && body) {
+        const spikeMat = new THREE.MeshStandardMaterial({ color: 0x3a2a2a, emissive: 0x5a1010, emissiveIntensity: 0.5 });
+        for (let k = -1; k <= 1; k++) {
+          const spike = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.28, 5), spikeMat);
+          spike.position.set(k * 0.18, body.position.y + 0.4, -0.2);
+          spike.rotation.x = -0.4;
+          m.add(spike);
+        }
+      }
+    };
+
+    // ---------- Wild monsters ----------
+    const wilds = [];
+    const spawnWild = () => {
+      const pool = G.biomePool || SPAWN_POOL;
+      const spId = Math.random() < 0.08 ? "kirara" : pool[Math.floor(Math.random() * pool.length)];
+      const m = buildMonster(spId);
+      // 🗺️ monster level from the current map's range (fallback: near player level)
+      if (G.biomeLvMin != null) {
+        m.userData.lv = G.biomeLvMin + Math.floor(Math.random() * (G.biomeLvMax - G.biomeLvMin + 1));
+      } else {
+        m.userData.lv = Math.max(1, (G.player ? G.player.level : 1) + Math.floor(Math.random() * 4) - 1);
+      }
+      const a = Math.random() * Math.PI * 2;
+      const r = 2.5 + Math.random() * (FIELD_R - 3);
+      m.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+      m.userData.wander = { cx: m.position.x, cz: m.position.z, ph: Math.random() * Math.PI * 2, r: 0.8 + Math.random() * 1.2, sp: 0.3 + Math.random() * 0.4 };
+      pushOut(m, 0.6); // don't spawn inside a tree or building
+      applyMenace(m); // 😱 scarier at higher level
+      // ✨ shiny: rare special variant (4% chance) — golden sparkle, stronger, better rewards
+      if (Math.random() < 0.04) {
+        m.userData.shiny = true;
+        // rainbow/gold tint on the body
+        m.traverse((o) => {
+          if (o.isMesh && o.material && "emissive" in o.material && o.material.emissive) {
+            o.material = o.material.clone();
+            o.material.emissive = new THREE.Color(0xf5d05a);
+            o.material.emissiveIntensity = 0.5;
+          }
+        });
+        m.scale.multiplyScalar(1.1);
+        // sparkle ring
+        const spk = new THREE.Mesh(
+          new THREE.RingGeometry(0.5, 0.68, 20),
+          new THREE.MeshBasicMaterial({ color: 0xffe680, transparent: true, opacity: 0.7, side: THREE.DoubleSide })
+        );
+        spk.rotation.x = -Math.PI / 2; spk.position.y = 0.03; m.add(spk);
+        m.userData.shinyRing = spk;
+        // ✨ sprite marker
+        const sc = document.createElement("canvas"); sc.width = 64; sc.height = 64;
+        const sx = sc.getContext("2d");
+        sx.font = "44px system-ui"; sx.textAlign = "center"; sx.textBaseline = "middle";
+        sx.fillText("✨", 32, 32);
+        const st = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(sc), transparent: true, depthTest: false }));
+        st.scale.set(0.5, 0.5, 1); st.position.y = 1.7; m.add(st);
+      }
+      vivify(m);
+      scene.add(m);
+      wilds.push(m);
+    };
+    G.biomeLvMin = BIOMES[0].lvMin; G.biomeLvMax = BIOMES[0].lvMax; // 🌸 start map: Lv 1-20
+    for (let i = 0; i < 9; i++) spawnWild(); // bigger map, more monsters
+    G.respawnT = 0;
+
+    // 🏜️ DESERT DECOR — cacti, sand dunes/mountains, and a blowing sandstorm (hidden unless in desert)
+    const desertDecor = new THREE.Group();
+    desertDecor.visible = false;
+    scene.add(desertDecor);
+    const cactusMat = new THREE.MeshStandardMaterial({ color: 0x4a8a4a, roughness: 0.8 });
+    const cactusDark = new THREE.MeshStandardMaterial({ color: 0x3a7038, roughness: 0.85 });
+    const makeCactus = (x, z) => {
+      const c = new THREE.Group();
+      const h = rnd(1.4, 2.4);
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, h, 10), cactusMat);
+      body.position.y = h / 2; body.castShadow = true; c.add(body);
+      // ridges
+      for (let k = 0; k < 6; k++) {
+        const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.02, h * 0.9, 0.04), cactusDark);
+        const a = (k / 6) * Math.PI * 2;
+        ridge.position.set(Math.cos(a) * 0.23, h / 2, Math.sin(a) * 0.23);
+        c.add(ridge);
+      }
+      // 1-2 arms
+      const arms = 1 + (Math.random() < 0.6 ? 1 : 0);
+      for (let k = 0; k < arms; k++) {
+        const side = k === 0 ? 1 : -1;
+        const armH = rnd(0.5, 0.9);
+        const elbow = h * rnd(0.4, 0.6);
+        const horiz = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.13, 0.4, 8), cactusMat);
+        horiz.rotation.z = Math.PI / 2; horiz.position.set(side * 0.3, elbow, 0); c.add(horiz);
+        const up = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, armH, 8), cactusMat);
+        up.position.set(side * 0.48, elbow + armH / 2, 0); up.castShadow = true; c.add(up);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), cactusMat);
+        cap.position.set(side * 0.48, elbow + armH, 0); c.add(cap);
+        // pink flower on top sometimes
+        if (Math.random() < 0.4) {
+          const fl = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), new THREE.MeshStandardMaterial({ color: 0xf5a0c0, emissive: 0x7a3a5a, emissiveIntensity: 0.2 }));
+          fl.position.set(side * 0.48, elbow + armH + 0.08, 0); fl.scale.y = 0.6; c.add(fl);
+        }
+      }
+      const topCap = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), cactusMat);
+      topCap.position.y = h; topCap.scale.y = 0.7; c.add(topCap);
+      c.position.set(x, 0, z);
+      desertDecor.add(c);
+      return { x, z };
+    };
+    // scatter cacti + small rocks
+    const desertColliders = [];
+    for (let i = 0; i < 14; i++) {
+      const a = Math.random() * Math.PI * 2, r = 2.5 + Math.random() * (FIELD_R - 3);
+      const cx = Math.cos(a) * r, cz = Math.sin(a) * r;
+      makeCactus(cx, cz); desertColliders.push({ x: cx, z: cz, r: 0.5 });
+    }
+    // 🏔️ big sand dunes / mountains around the horizon
+    const duneMat = new THREE.MeshStandardMaterial({ color: 0xd9b877, roughness: 1, flatShading: true });
+    const duneMatL = new THREE.MeshStandardMaterial({ color: 0xe8cc8a, roughness: 1, flatShading: true });
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2 + rnd(-0.2, 0.2);
+      const dist = FIELD_R + rnd(1, 4);
+      const dune = new THREE.Mesh(new THREE.ConeGeometry(rnd(3, 5.5), rnd(2.5, 5), 5), i % 2 ? duneMat : duneMatL);
+      dune.position.set(Math.cos(a) * dist, rnd(-0.4, 0.2), Math.sin(a) * dist);
+      dune.rotation.y = Math.random() * Math.PI;
+      dune.scale.set(1, rnd(0.5, 0.9), 1);
+      desertDecor.add(dune);
+    }
+    // small foreground sand mounds
+    for (let i = 0; i < 6; i++) {
+      const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * (FIELD_R - 5);
+      const mound = new THREE.Mesh(new THREE.SphereGeometry(rnd(0.8, 1.6), 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), duneMatL);
+      mound.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+      mound.scale.set(1, rnd(0.3, 0.5), 1);
+      desertDecor.add(mound);
+    }
+    // 🌪️ blowing sandstorm — drifting sand particles
+    const sandParticles = [];
+    const sandGeo = new THREE.SphereGeometry(0.05, 4, 4);
+    const sandMat = new THREE.MeshBasicMaterial({ color: 0xe8cc8a, transparent: true, opacity: 0.5 });
+    for (let i = 0; i < 60; i++) {
+      const p = new THREE.Mesh(sandGeo, sandMat);
+      p.position.set(rnd(-FIELD_R, FIELD_R), rnd(0.1, 3.5), rnd(-FIELD_R, FIELD_R));
+      p.userData = { sp: rnd(3, 7), sway: Math.random() * 6 };
+      desertDecor.add(p); sandParticles.push(p);
+    }
+    G.desertDecor = desertDecor;
+    G.sandParticles = sandParticles;
+    G.desertColliders = desertColliders;
+
+    // ❄️ SNOW DECOR — ice mountains, snowy pines, snowmen, and falling snow (hidden unless in snow)
+    const snowDecor = new THREE.Group();
+    snowDecor.visible = false;
+    scene.add(snowDecor);
+    const snowMat = new THREE.MeshStandardMaterial({ color: 0xf4fbff, roughness: 0.85 });
+    const pineMat = new THREE.MeshStandardMaterial({ color: 0x2a5a44, roughness: 0.8 });
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.9 });
+    const iceMat = new THREE.MeshStandardMaterial({ color: 0xbfe4f5, roughness: 0.25, metalness: 0.15, transparent: true, opacity: 0.9, flatShading: true });
+    // 🌲 snowy pine tree (stacked cones with snow caps)
+    const snowColliders = [];
+    const makePine = (x, z) => {
+      const p = new THREE.Group();
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 0.7, 7), trunkMat);
+      trunk.position.y = 0.35; trunk.castShadow = true; p.add(trunk);
+      const tiers = 3;
+      for (let k = 0; k < tiers; k++) {
+        const rad = 0.75 - k * 0.18;
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(rad, 0.85, 8), pineMat);
+        cone.position.y = 0.9 + k * 0.6; cone.castShadow = true; p.add(cone);
+        // snow cap sitting on each tier
+        const snow = new THREE.Mesh(new THREE.ConeGeometry(rad * 0.92, 0.32, 8), snowMat);
+        snow.position.y = 0.9 + k * 0.6 + 0.32; p.add(snow);
+      }
+      p.position.set(x, 0, z);
+      p.scale.setScalar(rnd(0.85, 1.3));
+      snowDecor.add(p);
+      snowColliders.push({ x, z, r: 0.4 });
+    };
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random() * Math.PI * 2, r = 2.5 + Math.random() * (FIELD_R - 3);
+      makePine(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    // ⛄ snowman (two stacked spheres + coal + carrot nose)
+    const makeSnowman = (x, z) => {
+      const sm = new THREE.Group();
+      const bot = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 12), snowMat);
+      bot.position.y = 0.4; bot.castShadow = true; sm.add(bot);
+      const mid = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 12), snowMat);
+      mid.position.y = 0.95; mid.castShadow = true; sm.add(mid);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 12), snowMat);
+      head.position.y = 1.35; sm.add(head);
+      const coalMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+      for (const ey of [[-0.07, 1.4], [0.07, 1.4]]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 6), coalMat);
+        eye.position.set(ey[0], ey[1], 0.18); sm.add(eye);
+      }
+      // carrot nose
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.2, 6), new THREE.MeshStandardMaterial({ color: 0xe8791a }));
+      nose.rotation.x = Math.PI / 2; nose.position.set(0, 1.35, 0.24); sm.add(nose);
+      // buttons
+      for (const by of [0.95, 0.85, 1.05]) {
+        const btn = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 6), coalMat);
+        btn.position.set(0, by, 0.26); sm.add(btn);
+      }
+      // stick arms
+      for (const side of [-1, 1]) {
+        const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4, 5), trunkMat);
+        arm.rotation.z = side * 1.0; arm.position.set(side * 0.32, 0.98, 0); sm.add(arm);
+      }
+      sm.position.set(x, 0, z);
+      snowDecor.add(sm);
+      snowColliders.push({ x, z, r: 0.45 });
+    };
+    for (let i = 0; i < 4; i++) {
+      const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * (FIELD_R - 4);
+      makeSnowman(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    // 🏔️ jagged ice mountains around the horizon
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2 + rnd(-0.2, 0.2);
+      const dist = FIELD_R + rnd(1, 4);
+      const berg = new THREE.Mesh(new THREE.ConeGeometry(rnd(2.5, 4.5), rnd(3.5, 6.5), 4), iceMat);
+      berg.position.set(Math.cos(a) * dist, rnd(-0.3, 0.4), Math.sin(a) * dist);
+      berg.rotation.y = Math.random() * Math.PI;
+      snowDecor.add(berg);
+      // snow cap on the peak
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(rnd(1.4, 2.4), rnd(1, 1.8), 4), snowMat);
+      cap.position.set(berg.position.x, berg.position.y + rnd(1.6, 2.6), berg.position.z);
+      cap.rotation.y = berg.rotation.y;
+      snowDecor.add(cap);
+    }
+    // small ice chunks / frozen mounds on the ground
+    for (let i = 0; i < 7; i++) {
+      const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * (FIELD_R - 5);
+      const chunk = new THREE.Mesh(new THREE.IcosahedronGeometry(rnd(0.4, 0.9), 0), iceMat);
+      chunk.position.set(Math.cos(a) * r, 0.1, Math.sin(a) * r);
+      chunk.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+      chunk.scale.y = 0.6;
+      snowDecor.add(chunk);
+    }
+    // 🌨️ falling snow
+    const snowFlakes = [];
+    const flakeGeo = new THREE.SphereGeometry(0.06, 5, 5);
+    const flakeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+    for (let i = 0; i < 90; i++) {
+      const f = new THREE.Mesh(flakeGeo, flakeMat);
+      f.position.set(rnd(-FIELD_R, FIELD_R), rnd(0.2, 6), rnd(-FIELD_R, FIELD_R));
+      f.userData = { fall: rnd(1.2, 2.6), sway: Math.random() * 6, drift: rnd(0.3, 0.9) };
+      snowDecor.add(f); snowFlakes.push(f);
+    }
+    G.snowDecor = snowDecor;
+    G.snowFlakes = snowFlakes;
+    G.snowColliders = snowColliders;
+
+    // 🕳️ CAVE DECOR — dark emerald cavern: glowing crystals, rock walls forming narrow maze corridors
+    const caveDecor = new THREE.Group();
+    caveDecor.visible = false;
+    scene.add(caveDecor);
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x33383a, roughness: 1, flatShading: true });
+    const rockDark = new THREE.MeshStandardMaterial({ color: 0x24282a, roughness: 1, flatShading: true });
+    const crystalMat = new THREE.MeshStandardMaterial({ color: 0x2ae88a, emissive: 0x1ac878, emissiveIntensity: 0.9, roughness: 0.2, metalness: 0.3, transparent: true, opacity: 0.9, flatShading: true });
+    const crystalMat2 = new THREE.MeshStandardMaterial({ color: 0x3af0d0, emissive: 0x1ad0b0, emissiveIntensity: 0.9, roughness: 0.2, metalness: 0.3, flatShading: true });
+    const caveColliders = [];
+    const caveLights = [];
+    // 💎 glowing crystal cluster (several shards + a point light)
+    const makeCrystal = (x, z, big) => {
+      const c = new THREE.Group();
+      const n = big ? 5 : 3;
+      for (let k = 0; k < n; k++) {
+        const h = rnd(0.5, big ? 1.8 : 1.0);
+        const shard = new THREE.Mesh(new THREE.ConeGeometry(rnd(0.1, 0.24), h, 5), k % 2 ? crystalMat : crystalMat2);
+        shard.position.set(rnd(-0.25, 0.25), h / 2, rnd(-0.25, 0.25));
+        shard.rotation.set(rnd(-0.3, 0.3), Math.random() * 3, rnd(-0.3, 0.3));
+        c.add(shard);
+      }
+      const light = new THREE.PointLight(0x2ae88a, big ? 1.6 : 0.9, big ? 6 : 4);
+      light.position.set(0, 0.8, 0); light.userData = { base: big ? 1.6 : 0.9 }; c.add(light); caveLights.push(light);
+      c.position.set(x, 0, z);
+      caveDecor.add(c);
+      caveColliders.push({ x, z, r: 0.4 });
+    };
+    // 🪨 rock wall segment (a chunky low wall of boulders) — used to build maze corridors
+    const makeWall = (x, z, len, horizontal) => {
+      const seg = Math.max(2, Math.round(len / 0.9));
+      for (let k = 0; k < seg; k++) {
+        const off = (k - (seg - 1) / 2) * 0.9;
+        const bx = x + (horizontal ? off : 0);
+        const bz = z + (horizontal ? 0 : off);
+        const boulder = new THREE.Mesh(new THREE.DodecahedronGeometry(rnd(0.55, 0.8), 0), k % 2 ? rockMat : rockDark);
+        boulder.position.set(bx, rnd(0.3, 0.6), bz);
+        boulder.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+        boulder.scale.y = rnd(1.1, 1.6);
+        boulder.castShadow = true;
+        caveDecor.add(boulder);
+        caveColliders.push({ x: bx, z: bz, r: 0.5 });
+      }
+    };
+    // build a loose maze of corridors from wall segments
+    const mazeWalls = [
+      [-8, -4, 8, true], [-4, 2, 7, true], [3, -2, 6, true], [-2, 7, 9, true],
+      [-9, 0, 8, false], [-3, -3, 6, false], [4, 3, 7, false], [8, -5, 6, false],
+      [0, -8, 5, true], [6, 6, 5, true],
+    ];
+    mazeWalls.forEach(([x, z, len, h]) => makeWall(x, z, len, h));
+    // scatter glowing crystals (some along the walls, some in the open)
+    for (let i = 0; i < 10; i++) {
+      const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * (FIELD_R - 3);
+      makeCrystal(Math.cos(a) * r, Math.sin(a) * r, i < 3);
+    }
+    // 🪨 stalagmites rising from the floor + a few big ones
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * (FIELD_R - 4);
+      const sh = rnd(0.8, 2.2);
+      const stal = new THREE.Mesh(new THREE.ConeGeometry(rnd(0.3, 0.6), sh, 6), i % 2 ? rockMat : rockDark);
+      stal.position.set(Math.cos(a) * r, sh / 2, Math.sin(a) * r);
+      stal.castShadow = true;
+      caveDecor.add(stal);
+    }
+    // dark rock ring around the horizon (cavern walls enclosing the field)
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const dist = FIELD_R + rnd(0.5, 2.5);
+      const wall = new THREE.Mesh(new THREE.ConeGeometry(rnd(2.5, 4), rnd(4, 7), 5), rockDark);
+      wall.position.set(Math.cos(a) * dist, rnd(-0.5, 0.5), Math.sin(a) * dist);
+      wall.rotation.y = Math.random() * Math.PI;
+      caveDecor.add(wall);
+    }
+    G.caveDecor = caveDecor;
+    G.caveLights = caveLights;
+    G.caveColliders = caveColliders;
+
+    // 🌋 VOLCANO DECOR — one huge erupting volcano, lava flows, cracked ground, volcanic rocks
+    const volcanoDecor = new THREE.Group();
+    volcanoDecor.visible = false;
+    scene.add(volcanoDecor);
+    const volRockMat = new THREE.MeshStandardMaterial({ color: 0x3a2420, roughness: 1, flatShading: true });
+    const volRockDark = new THREE.MeshStandardMaterial({ color: 0x241814, roughness: 1, flatShading: true });
+    const lavaMat = new THREE.MeshStandardMaterial({ color: 0xff5a1a, emissive: 0xff3a00, emissiveIntensity: 1.3, roughness: 0.4 });
+    const lavaHot = new THREE.MeshStandardMaterial({ color: 0xffc23a, emissive: 0xff8a1a, emissiveIntensity: 1.6, roughness: 0.3 });
+    const volColliders = [];
+    // 🌋 the great volcano (big cone at the far edge) + glowing crater + smoke
+    const volcano = new THREE.Group();
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(7, 9, 7), volRockMat);
+    cone.position.y = 4.5; cone.castShadow = true; volcano.add(cone);
+    // dark lava streaks down the slope
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2;
+      const streak = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.4, 8, 5), lavaMat);
+      streak.position.set(Math.cos(a) * 2.5, 4, Math.sin(a) * 2.5);
+      streak.rotation.z = Math.cos(a) * 0.35; streak.rotation.x = Math.sin(a) * 0.35;
+      volcano.add(streak);
+    }
+    // glowing crater rim
+    const crater = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.0, 0.8, 7), lavaHot);
+    crater.position.y = 8.8; volcano.add(crater);
+    const craterLight = new THREE.PointLight(0xff5a1a, 3, 18); craterLight.position.set(0, 9.5, 0); volcano.add(craterLight);
+    // erupting lava blobs + smoke plume (animated)
+    const eruptBlobs = [];
+    for (let i = 0; i < 10; i++) {
+      const b = new THREE.Mesh(new THREE.SphereGeometry(rnd(0.18, 0.4), 7, 7), i % 2 ? lavaHot : lavaMat);
+      b.userData = { base: 9, vy: rnd(2.5, 5), vx: rnd(-2, 2), vz: rnd(-2, 2), t: Math.random() };
+      volcano.add(b); eruptBlobs.push(b);
+    }
+    const smokePuffs = [];
+    const smokeMat = new THREE.MeshStandardMaterial({ color: 0x4a4038, transparent: true, opacity: 0.5, roughness: 1 });
+    for (let i = 0; i < 8; i++) {
+      const sm = new THREE.Mesh(new THREE.SphereGeometry(rnd(0.8, 1.5), 8, 8), smokeMat.clone());
+      sm.userData = { t: Math.random(), sp: rnd(0.4, 0.9) };
+      volcano.add(sm); smokePuffs.push(sm);
+    }
+    // place the volcano at the far edge of the field
+    volcano.position.set(0, 0, -FIELD_R - 2);
+    volcanoDecor.add(volcano);
+    G.volcanoEruptBlobs = eruptBlobs;
+    G.volcanoSmoke = smokePuffs;
+    G.volcanoCraterLight = craterLight;
+    // 🔥 lava flow patches on the cracked ground (glowing pools + veins)
+    const lavaPools = [];
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * (FIELD_R - 4);
+      const px = Math.cos(a) * r, pz = Math.sin(a) * r;
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(rnd(0.8, 1.8), 10), lavaMat.clone());
+      pool.rotation.x = -Math.PI / 2; pool.position.set(px, 0.03, pz);
+      volcanoDecor.add(pool); lavaPools.push(pool);
+      // glowing crack veins radiating out
+      for (let k = 0; k < 4; k++) {
+        const ang = Math.random() * Math.PI * 2, len = rnd(0.8, 2);
+        const vein = new THREE.Mesh(new THREE.PlaneGeometry(len, 0.08), lavaHot.clone());
+        vein.rotation.x = -Math.PI / 2; vein.rotation.z = ang;
+        vein.position.set(px + Math.cos(ang) * len / 2, 0.02, pz + Math.sin(ang) * len / 2);
+        volcanoDecor.add(vein);
+      }
+    }
+    G.lavaPools = lavaPools;
+    // 🪨 volcanic rocks scattered on the ground
+    for (let i = 0; i < 16; i++) {
+      const a = Math.random() * Math.PI * 2, r = 2.5 + Math.random() * (FIELD_R - 3);
+      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rnd(0.3, 0.7), 0), i % 2 ? volRockMat : volRockDark);
+      const rx = Math.cos(a) * r, rz = Math.sin(a) * r;
+      rock.position.set(rx, rnd(0.1, 0.3), rz);
+      rock.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+      rock.castShadow = true;
+      volcanoDecor.add(rock);
+      if (Math.random() < 0.4) volColliders.push({ x: rx, z: rz, r: 0.4 });
+    }
+    // small glowing embers rising off the ground
+    const embers = [];
+    const emberGeo = new THREE.SphereGeometry(0.05, 4, 4);
+    const emberMat = new THREE.MeshBasicMaterial({ color: 0xff8a3a, transparent: true, opacity: 0.9 });
+    for (let i = 0; i < 40; i++) {
+      const e = new THREE.Mesh(emberGeo, emberMat);
+      e.position.set(rnd(-FIELD_R, FIELD_R), rnd(0.2, 3), rnd(-FIELD_R, FIELD_R));
+      e.userData = { rise: rnd(0.6, 1.6), sway: Math.random() * 6 };
+      volcanoDecor.add(e); embers.push(e);
+    }
+    G.volcanoEmbers = embers;
+    // dark jagged rock walls around the horizon
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      if (Math.abs(a - Math.PI * 1.5) < 0.5) continue; // leave a gap where the volcano stands
+      const dist = FIELD_R + rnd(0.5, 3);
+      const wall = new THREE.Mesh(new THREE.ConeGeometry(rnd(2, 3.5), rnd(3, 6), 5), volRockDark);
+      wall.position.set(Math.cos(a) * dist, rnd(-0.4, 0.4), Math.sin(a) * dist);
+      wall.rotation.y = Math.random() * Math.PI;
+      volcanoDecor.add(wall);
+    }
+    G.volcanoDecor = volcanoDecor;
+    G.volcanoColliders = volColliders;
+
+    // ☁️ SKY DECOR — floating islands, drifting clouds, and glowing star motes (map 6)
+    const skyDecor = new THREE.Group();
+    skyDecor.visible = false;
+    scene.add(skyDecor);
+    const islandTop = new THREE.MeshStandardMaterial({ color: 0xbfe8c0, roughness: 0.8 });
+    const islandRock = new THREE.MeshStandardMaterial({ color: 0x9a8ac0, roughness: 0.9, flatShading: true });
+    const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true, opacity: 0.85 });
+    const skyColliders = [];
+    // 🏝️ floating grass islands (grassy disc + rocky underside)
+    const makeIsland = (x, z, scl) => {
+      const isl = new THREE.Group();
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.0, 0.3, 12), islandTop);
+      top.position.y = 0; top.castShadow = true; isl.add(top);
+      const under = new THREE.Mesh(new THREE.ConeGeometry(1.0, 1.6, 8), islandRock);
+      under.position.y = -0.9; isl.add(under);
+      // a couple of little crystals/tufts on top
+      for (let k = 0; k < 3; k++) {
+        const a = Math.random() * Math.PI * 2, r = Math.random() * 0.6;
+        const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.4, 5), new THREE.MeshStandardMaterial({ color: 0x8fc98a }));
+        tuft.position.set(Math.cos(a) * r, 0.3, Math.sin(a) * r); isl.add(tuft);
+      }
+      isl.position.set(x, rnd(0.2, 1.4), z);
+      isl.scale.setScalar(scl);
+      skyDecor.add(isl);
+      skyColliders.push({ x, z, r: 1.0 * scl });
+    };
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * (FIELD_R - 4);
+      makeIsland(Math.cos(a) * r, Math.sin(a) * r, rnd(0.8, 1.5));
+    }
+    // ☁️ drifting fluffy clouds (clusters of spheres)
+    const skyClouds = [];
+    for (let i = 0; i < 12; i++) {
+      const cloud = new THREE.Group();
+      const puffs = 3 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < puffs; k++) {
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(rnd(0.5, 0.9), 8, 8), cloudMat);
+        puff.position.set(rnd(-0.8, 0.8), rnd(-0.15, 0.15), rnd(-0.6, 0.6));
+        cloud.add(puff);
+      }
+      cloud.position.set(rnd(-FIELD_R, FIELD_R), rnd(1.5, 4.5), rnd(-FIELD_R, FIELD_R));
+      cloud.userData = { sp: rnd(0.3, 0.8) };
+      skyDecor.add(cloud); skyClouds.push(cloud);
+    }
+    G.skyClouds = skyClouds;
+    // ✨ big distant cloud banks around the horizon
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      const dist = FIELD_R + rnd(1, 3);
+      const bank = new THREE.Mesh(new THREE.SphereGeometry(rnd(3, 5), 8, 8), cloudMat);
+      bank.position.set(Math.cos(a) * dist, rnd(-1, 1), Math.sin(a) * dist);
+      bank.scale.set(1.4, 0.6, 1);
+      skyDecor.add(bank);
+    }
+    // 🌟 floating glowing star motes drifting up
+    const skyMotes = [];
+    const moteGeo = new THREE.OctahedronGeometry(0.08, 0);
+    const moteMat = new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0.9 });
+    for (let i = 0; i < 40; i++) {
+      const m = new THREE.Mesh(moteGeo, moteMat);
+      m.position.set(rnd(-FIELD_R, FIELD_R), rnd(0.3, 4), rnd(-FIELD_R, FIELD_R));
+      m.userData = { rise: rnd(0.3, 0.9), spin: rnd(1, 3), sway: Math.random() * 6 };
+      skyDecor.add(m); skyMotes.push(m);
+    }
+    G.skyMotes = skyMotes;
+    G.skyDecor = skyDecor;
+    G.skyColliders = skyColliders;
+
+
+    // ---------- 👻 Night ghost boss (dead-tree grove) ----------
+    let ghostMesh = null;
+    const spawnGhost = () => {
+      const m = buildMonster("phi");
+      m.scale.multiplyScalar(1.45);
+      m.userData.spId = "phi";
+      m.userData.lv = G.player.level + 3;
+      m.userData.ghost = true;
+      const aura = new THREE.Mesh(
+        new THREE.RingGeometry(0.55, 0.72, 28),
+        new THREE.MeshBasicMaterial({ color: 0x8a6ae0, transparent: true, opacity: 0.6, side: THREE.DoubleSide })
+      );
+      aura.rotation.x = -Math.PI / 2;
+      aura.position.y = 0.02;
+      m.add(aura);
+      const a = 0.5 + Math.random() * 0.5; // dead-tree grove sector
+      const r = 8 + Math.random() * 5;
+      m.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+      m.userData.wander = { cx: m.position.x, cz: m.position.z, ph: Math.random() * 6, r: 1.6, sp: 0.35 };
+      pushOut(m, 0.6);
+      vivify(m);
+      scene.add(m);
+      wilds.push(m);
+      ghostMesh = m;
+      toast("👻 ผีราตรีปรากฏตัวในดงไม้แห้ง!! ปราบมันเพื่อของดรอปชั้นดี");
+    };
+    const despawnGhost = () => {
+      if (!ghostMesh) return;
+      const gi = wilds.indexOf(ghostMesh);
+      if (gi >= 0) wilds.splice(gi, 1);
+      scene.remove(ghostMesh);
+      ghostMesh = null;
+      toast("🌄 ผีราตรีสลายไปกับแสงเช้า...");
+    };
+
+    // ---------- ⏰ Random events ----------
+    G.event = null;
+    const meteors = [];
+    const spawnMeteor = () => {
+      const g = new THREE.Group();
+      const gem = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.26),
+        new THREE.MeshStandardMaterial({ color: 0x9adcf5, emissive: 0x4a8ad0, emissiveIntensity: 0.9 })
+      );
+      const trail = new THREE.Mesh(
+        new THREE.ConeGeometry(0.12, 0.9, 8),
+        new THREE.MeshBasicMaterial({ color: 0xd0ecff, transparent: true, opacity: 0.55 })
+      );
+      trail.position.y = 0.6;
+      g.add(gem, trail);
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * (FIELD_R - 1);
+      g.position.set(Math.cos(a) * r, 13, Math.sin(a) * r);
+      g.userData = { gem, trail, landed: false, age: 0 };
+      scene.add(g);
+      meteors.push(g);
+    };
+    const clearMeteors = () => { meteors.forEach((m) => scene.remove(m)); meteors.length = 0; };
+    const makeGolden = () => {
+      const spId = SPAWN_POOL[Math.floor(Math.random() * SPAWN_POOL.length)];
+      const m = buildMonster(spId);
+      m.traverse((o) => {
+        if (o.isMesh && o.material && o.material.color) {
+          o.material = o.material.clone();
+          o.material.color.setHex(0xf5c542);
+          if ("emissive" in o.material && o.material.emissive) {
+            o.material.emissive = new THREE.Color(0x8a6a10);
+            o.material.emissiveIntensity = 0.6;
+          }
+        }
+      });
+      m.userData.body = m.userData.body; // keep ref
+      m.userData.lv = G.player.level + 1;
+      m.userData.golden = true;
+      const a = Math.random() * Math.PI * 2;
+      m.position.set(Math.cos(a) * 6, 0, Math.sin(a) * 6);
+      m.userData.wander = { cx: m.position.x, cz: m.position.z, ph: 0, r: 1, sp: 0.3 };
+      scene.add(m);
+      wilds.push(m);
+      return m;
+    };
+    const endEvent = () => {
+      if (!G.event) return;
+      if (G.event.type === "meteor") clearMeteors();
+      if (G.event.type === "horde") {
+        for (let i = wilds.length - 1; i >= 0; i--) {
+          if (wilds[i].userData.horde) { scene.remove(wilds[i]); wilds.splice(i, 1); }
+        }
+      }
+      if (G.event.type === "golden" && G.event.mesh) {
+        const gi = wilds.indexOf(G.event.mesh);
+        if (gi >= 0) { scene.remove(G.event.mesh); wilds.splice(gi, 1); toast("💨 มอนสเตอร์ทองหนีไปแล้ว!"); }
+      }
+      G.event = null;
+      setUi((u) => ({ ...u, eventMsg: "", eventLeft: 0 }));
+    };
+    const startEvent = (type) => {
+      if (type === "meteor") {
+        G.event = { type, t: 0, dur: 60, spawnT: 0 };
+        toast("☄️ ฝนดาวตก!! เก็บคริสตัลที่ร่วงลงมาให้ทัน 60 วิ!");
+        setUi((u) => ({ ...u, eventMsg: "☄️ ฝนดาวตก — เก็บคริสตัลรับของแรร์!", eventLeft: 60 }));
+      } else if (type === "horde") {
+        G.event = { type, t: 0, dur: 90 };
+        for (let i = 0; i < 5; i++) {
+          spawnWild();
+          const m = wilds[wilds.length - 1];
+          m.userData.horde = true;
+          m.userData.lv = (m.userData.lv || 1) + 2;
+          const a = Math.random() * Math.PI * 2;
+          m.position.set(char.position.x + Math.cos(a) * 4, 0, char.position.z + Math.sin(a) * 4);
+          m.userData.wander.cx = m.position.x;
+          m.userData.wander.cz = m.position.z;
+        }
+        toast("⚔️ ฝูงมอนสเตอร์บุก!! ปราบพวกมันรับทอง ×1.5");
+        setUi((u) => ({ ...u, eventMsg: "⚔️ ฝูงมอนสเตอร์บุก — ทองดรอป ×1.5!", eventLeft: 90 }));
+      } else if (type === "golden") {
+        const m = makeGolden();
+        G.event = { type, t: 0, dur: 30, mesh: m };
+        toast("🌟 มอนสเตอร์สีทองปรากฏตัว!! ไล่จับก่อนมันหนีใน 30 วิ!");
+        setUi((u) => ({ ...u, eventMsg: "🌟 ไล่จับมอนสเตอร์ทอง!", eventLeft: 30 }));
+      }
+    };
+    G.eventT = 20; // first event comes fairly soon
+
+    // ---------- 🗼 Dungeon portal ----------
+    const portal = new THREE.Group();
+    const pRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.95, 0.1, 10, 32),
+      new THREE.MeshStandardMaterial({ color: 0x9a6ad0, emissive: 0x6a2ad0, emissiveIntensity: 0.9 })
+    );
+    pRing.position.y = 1.2;
+    const pDisc = new THREE.Mesh(
+      new THREE.CircleGeometry(0.85, 28),
+      new THREE.MeshBasicMaterial({ color: 0x4a1a8a, transparent: true, opacity: 0.65, side: THREE.DoubleSide })
+    );
+    pDisc.position.y = 1.2;
+    const pSwirl = new THREE.Mesh(
+      new THREE.RingGeometry(0.3, 0.5, 24),
+      new THREE.MeshBasicMaterial({ color: 0xc9a8f0, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+    );
+    pSwirl.position.set(0, 1.2, 0.01);
+    portal.add(pRing, pDisc, pSwirl);
+    portal.position.set(-6.6, 0, 7.0);
+    portal.rotation.y = 0.8;
+    scene.add(portal);
+    colliders.push({ x: -6.6, z: 7.0, r: 0.4 });
+
+    // ---------- 🌀 Warp pad: travel between adventure maps ----------
+    G.curBiome = 0;
+    G.biomeLvMin = BIOMES[0].lvMin; G.biomeLvMax = BIOMES[0].lvMax; // 🌸 start map: Lv 1-20
+    const warp = new THREE.Group();
+    const warpBase = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.1, 1.2, 0.12, 24),
+      new THREE.MeshStandardMaterial({ color: 0x3a6ad0, emissive: 0x1a3a90, emissiveIntensity: 0.5, metalness: 0.5 })
+    );
+    warpBase.position.y = 0.06;
+    const warpGlow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.95, 24),
+      new THREE.MeshBasicMaterial({ color: 0x7ad0ff, transparent: true, opacity: 0.55, side: THREE.DoubleSide })
+    );
+    warpGlow.rotation.x = -Math.PI / 2;
+    warpGlow.position.y = 0.13;
+    const warpRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.8, 0.06, 10, 28),
+      new THREE.MeshStandardMaterial({ color: 0x9adcff, emissive: 0x4aa0e0, emissiveIntensity: 0.9 })
+    );
+    warpRing.rotation.x = -Math.PI / 2;
+    warpRing.position.y = 0.5;
+    // floating pillars
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.4, 8), new THREE.MeshStandardMaterial({ color: 0x6aa0e0, emissive: 0x2a5a90, emissiveIntensity: 0.6 }));
+      col.position.set(Math.cos(a) * 1.0, 0.7, Math.sin(a) * 1.0);
+      warp.add(col);
+    }
+    warp.add(warpBase, warpGlow, warpRing);
+    warp.position.set(6.5, 0, 6.5);
+    scene.add(warp);
+    colliders.push({ x: 6.5, z: 6.5, r: 0.5 });
+
+    // decorations we can toggle per biome (trees/bushes already added get a tag)
+    const switchBiome = (idx) => {
+      const b = BIOMES[((idx % BIOMES.length) + BIOMES.length) % BIOMES.length];
+      G.curBiome = BIOMES.indexOf(b);
+      ground.material.color.setHex(b.ground);
+      G.biomeSky = new THREE.Color(b.sky);
+      G.biomeFog = new THREE.Color(b.fog);
+      // clear current wild monsters and respawn from this biome's pool
+      for (let i = wilds.length - 1; i >= 0; i--) { scene.remove(wilds[i]); wilds.splice(i, 1); }
+      G.biomePool = b.pool;
+      G.biomeLvMin = b.lvMin; G.biomeLvMax = b.lvMax; // 🗺️ this map's monster level range
+      // 🏜️ desert · ❄️ snow · 🕳️ cave · 🌋 volcano — each hides the green trees
+      const isDesert = b.id === "desert";
+      const isSnow = b.id === "snow";
+      const isCave = b.id === "cave";
+      const isVolcano = b.id === "volcano";
+      const isSky = b.id === "sky";
+      if (G.desertDecor) G.desertDecor.visible = isDesert;
+      if (G.snowDecor) G.snowDecor.visible = isSnow;
+      if (G.caveDecor) G.caveDecor.visible = isCave;
+      if (G.volcanoDecor) G.volcanoDecor.visible = isVolcano;
+      if (G.skyDecor) G.skyDecor.visible = isSky;
+      if (G.sceneryObjects) G.sceneryObjects.forEach((o) => (o.visible = !isDesert && !isSnow && !isCave && !isVolcano && !isSky));
+      // 🧭 obstacles the player must walk around in this biome (for collision + auto-steer)
+      G.biomeColliders = isDesert ? (G.desertColliders || [])
+        : isSnow ? (G.snowColliders || [])
+        : isCave ? (G.caveColliders || [])
+        : isVolcano ? (G.volcanoColliders || [])
+        : isSky ? (G.skyColliders || [])
+        : [];
+      for (let i = 0; i < 9; i++) spawnWild();
+      if (G.sfx) G.sfx.warp();
+      toast(`${b.emoji} วาร์ปสู่ ${b.name}! มอนสเตอร์ประจำถิ่นปรากฏตัว`);
+      setUi((u) => ({ ...u, biomeName: `${b.emoji} ${b.name}`, biomeIdx: G.curBiome }));
+    };
+    G.warpNext = () => switchBiome(G.curBiome + 1);
+    G.warpTo = (i) => switchBiome(i);
+    G.warpAsk = false;
+    // 🏰 biome boss challenge
+    G.biomeBossDefeated = {};
+    G.challengeBiomeBoss = () => {
+      const b = BIOMES[G.curBiome];
+      if (!b || !b.boss) { toast("แดนนี้ไม่มีบอสประจำถิ่น"); return; }
+      if (G.mode !== "explore") return;
+      const m = buildMonster(b.boss, 3);
+      m.scale.multiplyScalar(1.7);
+      m.userData.lv = b.lvMax != null ? b.lvMax : G.player.level + 4; // 👑 boss at the map's top level
+      m.userData.boss = true;
+      m.userData.biomeBoss = b.id;
+      applyMenace(m);
+      vivify(m);
+      scene.add(m);
+      toast(`⚔️ ท้าดวล ${b.bossName} เจ้าถิ่น${b.name}!`);
+      startBattle(m);
+    };
+
+    G.dungeon = null;
+    const dungeonCenter = new THREE.Vector3();
+    const DUNGEON_MAX = 100;
+    const dungeonSpawn = (floor) => {
+      const bossFloor = floor % 10 === 0; // 👑 boss every 10 floors
+      const midBoss = floor % 5 === 0 && !bossFloor;
+      // deeper floors pull from tougher species
+      const easyPool = ["mochi", "baibua", "mekha", "plerng", "nam"];
+      const midPool = ["khiao", "ngu", "paksi", "plerng", "kirara"];
+      const hardPool = ["saming", "paksi", "phi", "garuda", "kirara"];
+      const pool = floor >= 60 ? hardPool : floor >= 25 ? midPool : easyPool;
+      const bossPool = floor >= 50 ? ["garuda", "saming"] : ["saming", "phi", "kirara"];
+      const spId = (bossFloor ? bossPool : pool)[Math.floor(Math.random() * (bossFloor ? bossPool : pool).length)];
+      const stage = bossFloor ? 3 : midBoss ? 2 : 1;
+      const m = buildMonster(spId, stage);
+      if (bossFloor) m.scale.multiplyScalar(1.5);
+      m.userData.lv = G.player.level + floor;
+      m.userData.boss = bossFloor;
+      m.userData.dungeon = true;
+      applyMenace(m);
+      vivify(m);
+      scene.add(m);
+      char.position.copy(dungeonCenter); // keep the arena centered
+      startBattle(m);
+      setUi((u) => ({ ...u, dungeonFloor: floor }));
+    };
+    G.enterDungeon = () => {
+      // resume from the deepest unbeaten floor, or start at 1
+      const startFloor = (G.dungeonProgress && G.dungeonProgress > 1) ? G.dungeonProgress : 1;
+      G.dungeon = { floor: startFloor };
+      dungeonCenter.set(char.position.x, 0, char.position.z);
+      setUi((u) => ({ ...u, dungeonAsk: false }));
+      toast(startFloor > 1
+        ? `🗼 กลับเข้าหอคอย เริ่มต่อชั้น ${startFloor}/100!`
+        : "🗼 เข้าสู่หอคอยมิติ 100 ชั้น! บอสทุก 10 ชั้น — แพ้คือดีดออก (จำด่านให้)");
+      dungeonSpawn(startFloor);
+    };
+    G.declineDungeon = () => {
+      G.portalShy = true;
+      setUi((u) => ({ ...u, dungeonAsk: false }));
+    };
+    G.closeWarp = () => {
+      G.warpShy = true;
+      setUi((u) => ({ ...u, warpAsk: false }));
+    };
+    G.doWarp = (i) => {
+      G.warpShy = true;
+      switchBiome(i);
+      setUi((u) => ({ ...u, warpAsk: false }));
+    };
+
+    // ---------- 🎣 Fishing minigame ----------
+    const FISH_TYPES = [
+      { name: "ปลาซิว", emoji: "🐟", rarity: "common", gold: 8, exp: 5, w: 40 },
+      { name: "ปลาทอง", emoji: "🐠", rarity: "common", gold: 12, exp: 8, w: 30 },
+      { name: "ปลาปักเป้า", emoji: "🐡", rarity: "rare", gold: 25, exp: 15, w: 15 },
+      { name: "ปลาหมึก", emoji: "🦑", rarity: "rare", gold: 35, exp: 20, w: 9 },
+      { name: "มังกรน้ำ", emoji: "🐉", rarity: "epic", gold: 80, exp: 50, w: 4 },
+      { name: "รองเท้าเก่า", emoji: "🥾", rarity: "junk", gold: 1, exp: 1, w: 12 },
+    ];
+    const rollFish = () => {
+      const total = FISH_TYPES.reduce((s, f) => s + f.w, 0);
+      let r = Math.random() * total;
+      for (const f of FISH_TYPES) { r -= f.w; if (r <= 0) return f; }
+      return FISH_TYPES[0];
+    };
+    G.startFishing = () => {
+      if (G.fishing) return;
+      if (G.sfx) G.sfx.splash();
+      // cast → wait random → bite window
+      G.fishing = { phase: "waiting", t: 0, bite: 1.2 + Math.random() * 2.5 };
+      setUi((u) => ({ ...u, fishing: { phase: "waiting" } }));
+      toast("🎣 เหวี่ยงเบ็ด... รอปลากินเหยื่อ");
+    };
+    G.reelFishing = () => {
+      const f = G.fishing;
+      if (!f) return;
+      if (f.phase === "waiting") {
+        // reeled too early
+        G.fishing = null;
+        setUi((u) => ({ ...u, fishing: null }));
+        toast("💨 ดึงเร็วไป! ปลาหนีหมด ลองใหม่");
+        if (G.sfx) G.sfx.reel();
+      } else if (f.phase === "bite") {
+        // caught!
+        const fish = rollFish();
+        G.gold += fish.gold;
+        gainExp(fish.exp);
+        G.fishing = null;
+        setUi((u) => ({ ...u, fishing: null }));
+        if (G.sfx) G.sfx.fish();
+        if (fish.rarity !== "junk") questProgress("collect", 1);
+        toast(`${fish.emoji} จับ${fish.name}ได้! +${fish.gold}💰 +${fish.exp}EXP`);
+      }
+    };
+    G.stopFishing = () => {
+      G.fishing = null;
+      setUi((u) => ({ ...u, fishing: null }));
+    };
+    G.exitDungeon = () => {
+      // leave voluntarily, keep progress
+      if (G.enemy && G.enemy.mesh) scene.remove(G.enemy.mesh);
+      G.enemy = null;
+      G.banim = null;
+      G.dungeon = null;
+      if (G.restoreScenery) G.restoreScenery();
+      G.mode = "explore";
+      char.position.set(-5, 0, 6.5); // near the portal
+      toast(`🚪 ออกจากหอคอย · บันทึกความคืบหน้าถึงชั้น ${G.dungeonProgress || 1} แล้ว`);
+      setUi((u) => ({ ...u, mode: "explore", dungeonFloor: 0, enemy: null, msg: "" }));
+      saveGame && saveGame();
+    };
+
+    // ---------- 📜 Quest system (bigger exp/gold than plain fighting) ----------
+    const QUEST_TEMPLATES = [
+      { type: "win", label: (n) => `ปราบมอนสเตอร์ ${n} ตัว`, targets: [5, 8, 12], emoji: "⚔️" },
+      { type: "catch", label: (n) => `จับมอนสเตอร์ ${n} ตัว`, targets: [2, 3, 5], emoji: "💗" },
+      { type: "boss", label: (n) => `ปราบบอส ${n} ตัว`, targets: [1, 2], emoji: "👑" },
+      { type: "collect", label: (n) => `เก็บคริสตัล/ของดรอป ${n} ชิ้น`, targets: [3, 5, 8], emoji: "🎁" },
+      { type: "floor", label: (n) => `พิชิตหอคอย ${n} ชั้น`, targets: [3, 5, 10], emoji: "🗼" },
+    ];
+    const makeQuest = () => {
+      const tpl = QUEST_TEMPLATES[Math.floor(Math.random() * QUEST_TEMPLATES.length)];
+      const target = tpl.targets[Math.floor(Math.random() * tpl.targets.length)];
+      const lvl = G.player ? G.player.level : 1;
+      return {
+        type: tpl.type, emoji: tpl.emoji, label: tpl.label(target),
+        target, prog: 0,
+        exp: target * (12 + lvl * 4), // way more than a single kill
+        gold: target * (10 + lvl * 3),
+        done: false, claimed: false,
+      };
+    };
+    G.quests = [];
+    const refreshQuests = () => {
+      // keep 3 active quests
+      while (G.quests.filter((q) => !q.claimed).length < 3) G.quests.push(makeQuest());
+      setUi((u) => ({ ...u, quests: G.quests.map((q) => ({ ...q })) }));
+    };
+    const questProgress = (type, n = 1) => {
+      let any = false;
+      G.quests.forEach((q) => {
+        if (q.type === type && !q.done) {
+          q.prog = Math.min(q.target, q.prog + n);
+          if (q.prog >= q.target) { q.done = true; any = true; toast(`📜 ภารกิจสำเร็จ! ${q.emoji} ${q.label} — กดรับรางวัล`); }
+        }
+      });
+      setUi((u) => ({ ...u, quests: G.quests.map((q) => ({ ...q })) }));
+      return any;
+    };
+    G.questProgress = questProgress;
+
+    // 🏅 Achievements — permanent goals with one-time gold rewards
+    const ACHIEVEMENTS = [
+      { id: "first_win", name: "ก้าวแรกนักสู้", emoji: "⚔️", desc: "ชนะการต่อสู้ครั้งแรก", reward: 50, check: (st) => st.wins >= 1 },
+      { id: "win_50", name: "นักล่าฝีมือดี", emoji: "🔥", desc: "ชนะ 50 ครั้ง", reward: 300, check: (st) => st.wins >= 50 },
+      { id: "win_200", name: "ตำนานนักรบ", emoji: "👑", desc: "ชนะ 200 ครั้ง", reward: 1000, check: (st) => st.wins >= 200 },
+      { id: "catch_5", name: "นักสะสมมือใหม่", emoji: "💗", desc: "จับมอนสเตอร์ 5 ชนิด", reward: 150, check: (st) => st.species >= 5 },
+      { id: "catch_all", name: "สะสมครบทุกชนิด", emoji: "📖", desc: "จับมอนสเตอร์ครบทุกชนิด", reward: 2000, check: (st) => st.species >= st.totalSpecies },
+      { id: "boss_1", name: "นักล่าบอส", emoji: "🐉", desc: "ปราบบอสตัวแรก", reward: 200, check: (st) => st.bosses >= 1 },
+      { id: "tower_10", name: "นักไต่หอคอย", emoji: "🗼", desc: "พิชิตหอคอยชั้น 10", reward: 300, check: (st) => st.floor >= 10 },
+      { id: "tower_50", name: "ผู้พิชิตความสูง", emoji: "🏔️", desc: "พิชิตหอคอยชั้น 50", reward: 1000, check: (st) => st.floor >= 50 },
+      { id: "tower_100", name: "เจ้าแห่งหอคอย", emoji: "🏆", desc: "พิชิตหอคอยครบ 100 ชั้น", reward: 3000, check: (st) => st.floor >= 100 },
+      { id: "level_20", name: "ผู้แข็งแกร่ง", emoji: "⭐", desc: "เลเวลตัวละครถึง 20", reward: 500, check: (st) => st.level >= 20 },
+      { id: "dragon_gear", name: "นักรบมังกร", emoji: "🐲", desc: "ได้อุปกรณ์มังกร", reward: 500, check: (st) => st.dragon >= 1 },
+      { id: "rich", name: "เศรษฐีทอง", emoji: "💰", desc: "สะสมทองครบ 5000", reward: 500, check: (st) => st.gold >= 5000 },
+    ];
+    G.achStats = { wins: 0, bosses: 0, floor: 0, dragon: 0, playSec: 0, catches: 0 };
+    G.achUnlocked = {};
+    const achState = () => ({
+      wins: G.achStats.wins || 0,
+      bosses: G.achStats.bosses || 0,
+      floor: Math.max(G.achStats.floor || 0, (G.dungeonProgress || 1) - 1),
+      dragon: G.achStats.dragon || 0,
+      species: Object.keys(G.col || {}).length,
+      totalSpecies: Object.keys(SPECIES).length,
+      level: G.player ? G.player.level : 1,
+      gold: G.gold || 0,
+    });
+    const checkAchievements = () => {
+      const st = achState();
+      let changed = false;
+      ACHIEVEMENTS.forEach((a) => {
+        if (!G.achUnlocked[a.id] && a.check(st)) {
+          G.achUnlocked[a.id] = true;
+          G.gold += a.reward;
+          changed = true;
+          toast(`🏅 ปลดล็อกความสำเร็จ! ${a.emoji} ${a.name} +${a.reward}💰`);
+          if (G.sfx) G.sfx.levelup();
+        }
+      });
+      if (changed) { setUi((u) => ({ ...u, achUnlocked: { ...G.achUnlocked } })); syncPlayer(); }
+    };
+    G.checkAchievements = checkAchievements;
+    // 🎖️ pick a title (ฉายา) based on the player's biggest achievement
+    G.computeTitle = () => {
+      const st = G.achStats || {};
+      const floor = Math.max(st.floor || 0, (G.dungeonProgress || 1) - 1);
+      const wins = st.wins || 0;
+      const species = Object.keys(G.col || {}).length;
+      let title = "ผู้ผจญภัย";
+      if (floor >= 100) title = "เจ้าแห่งหอคอย 🏆";
+      else if ((G.ngPlus || 0) >= 1) title = "ตำนานอมตะ ⭐";
+      else if (floor >= 50) title = "ผู้พิชิตความสูง 🏔️";
+      else if (wins >= 200) title = "ตำนานนักรบ 👑";
+      else if (species >= Object.keys(SPECIES).length) title = "นักสะสมสมบูรณ์ 📖";
+      else if (st.bosses >= 1 && floor >= 10) title = "นักล่าบอส 🐲";
+      else if (wins >= 50) title = "นักล่าฝีมือดี 🔥";
+      else if (species >= 5) title = "นักสะสม 💗";
+      else if (wins >= 1) title = "นักสู้หน้าใหม่ ⚔️";
+      G.playerTitle = title;
+      if (G.drawPlayerLabel) G.drawPlayerLabel();
+      return title;
+    };
+    G.ACHIEVEMENTS = ACHIEVEMENTS;
+    G.claimQuest = (i) => {
+      const q = G.quests[i];
+      if (!q || !q.done || q.claimed) return;
+      q.claimed = true;
+      G.gold += q.gold;
+      toast(`🎉 รับรางวัลภารกิจ! +${q.exp} EXP +${q.gold}💰`);
+      gainExp(q.exp); // handles level-ups
+      G.quests = G.quests.filter((x) => !x.claimed);
+      refreshQuests();
+      syncPlayer();
+    };
+
+    // ---------- Buddy (caught pet following) ----------
+    let buddyMesh = null;
+    G.setBuddy = (spId) => {
+      if (buddyMesh) { scene.remove(buddyMesh); buddyMesh = null; }
+      G.buddy = spId;
+      if (spId) {
+        const stage = (G.pets && G.pets[spId] && G.pets[spId].stage) || 1;
+        buddyMesh = buildMonster(spId, stage);
+        buddyMesh.scale.multiplyScalar(0.62);
+        buddyMesh.position.set(char.position.x - 1, 0, char.position.z + 0.6);
+        vivify(buddyMesh);
+        scene.add(buddyMesh);
+      }
+      setUi((u) => ({ ...u, buddy: spId, panelOpen: false }));
+    };
+    // 🐾 add/remove a pet from the active team (max 3); slot 0 = walking buddy
+    G.petSkillLv = G.petSkillLv || {};
+    G.toggleTeam = (spId) => {
+      if (!G.team) G.team = [];
+      const i = G.team.indexOf(spId);
+      if (i >= 0) {
+        G.team.splice(i, 1);
+        toast(`ถอด ${SPECIES[spId].name} ออกจากทีม`);
+      } else {
+        if (G.team.length >= 3) { toast("ทีมเต็มแล้ว (3 ตัว)! ถอดตัวอื่นก่อน"); return; }
+        G.team.push(spId);
+        toast(`➕ ${SPECIES[spId].name} เข้าทีม!`);
+      }
+      // slot 0 walks with you
+      G.setBuddy(G.team[0] || null);
+      setUi((u) => ({ ...u, team: [...G.team] }));
+      syncPlayer();
+    };
+    // 🎯 level up a pet's combat skill using pet skill points
+    G.rankPetSkill = (spId) => {
+      if ((G.petSp || 0) <= 0) { toast("ไม่มีแต้มสกิลสัตว์เลี้ยง! ได้จากการวิวัฒน์"); return; }
+      const cur = (G.petSkillLv[spId] || 1);
+      if (cur >= 10) { toast("สกิลสัตว์เลี้ยงเต็ม Lv.10 แล้ว! ⭐"); return; }
+      G.petSp--;
+      G.petSkillLv[spId] = cur + 1;
+      if (G.sfx) G.sfx.levelup();
+      toast(`⬆️ สกิล${SPECIES[spId].name} → Lv.${cur + 1}!`);
+      setUi((u) => ({ ...u, petSkillLv: { ...G.petSkillLv }, petSp: G.petSp }));
+      syncPlayer();
+    };
+    // 🔮 fuse two pets → a random rarer one (both consumed)
+    G.fusePets = (idA, idB) => {
+      if (!idA || !idB || idA === idB) { toast("เลือกสัตว์เลี้ยง 2 ตัวที่ต่างกัน"); return; }
+      if (!G.col[idA] || !G.col[idB]) return;
+      // result: a higher-tier species
+      const pool = Object.keys(SPECIES).filter((k) => SPECIES[k].tier >= Math.max(SPECIES[idA].tier, SPECIES[idB].tier));
+      const rarePool = pool.filter((k) => SPECIES[k].tier >= 3);
+      const result = (rarePool.length ? rarePool : pool)[Math.floor(Math.random() * (rarePool.length ? rarePool.length : pool.length))];
+      // consume one of each
+      G.col[idA]--; if (G.col[idA] <= 0) { delete G.col[idA]; G.team = (G.team || []).filter((x) => x !== idA); }
+      G.col[idB]--; if (G.col[idB] <= 0) { delete G.col[idB]; G.team = (G.team || []).filter((x) => x !== idB); }
+      // grant result (evolved a stage)
+      G.col[result] = (G.col[result] || 0) + 1;
+      if (!G.pets[result]) G.pets[result] = { lv: 3, exp: 0, stage: 2 };
+      else G.pets[result].stage = Math.min(3, G.pets[result].stage + 1);
+      if (G.buddy && !G.col[G.buddy]) G.setBuddy(G.team[0] || null);
+      if (G.sfx) G.sfx.catch();
+      toast(`🔮✨ ผสมสำเร็จ! ได้ ${SPECIES[result].name} (ร่าง ${G.pets[result].stage})!`);
+      setUi((u) => ({ ...u, col: { ...G.col }, pets: { ...G.pets }, team: [...(G.team || [])], fuseA: null, fuseB: null }));
+      syncPlayer();
+    };
+
+    // ---------- FX ----------
+    const sparks = [];
+    for (let i = 0; i < 14; i++) {
+      const s = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffd6e4, transparent: true }));
+      s.visible = false;
+      s.userData = { t: 99 };
+      scene.add(s);
+      sparks.push(s);
+    }
+    const burst = (pos, color, y = 0.8) => {
+      sparks.forEach((s, i) => {
+        s.visible = true;
+        s.material.color.setHex(color);
+        s.material.opacity = 1;
+        s.position.set(pos.x, y, pos.z);
+        const a = (i / sparks.length) * Math.PI * 2;
+        s.userData = { t: 0, vx: Math.cos(a) * 2.2, vy: 2.6 + Math.random() * 1.5, vz: Math.sin(a) * 2.2 };
+      });
+    };
+    // heart ball
+    const ball = new THREE.Group();
+    const ballTop = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 14, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xd9536b }));
+    const ballBot = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 14, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), whiteMat);
+    ball.add(ballTop, ballBot);
+    ball.visible = false;
+    scene.add(ball);
+
+    // ---------- Fantasy class battle FX ----------
+    // crescent slash (warrior)
+    const slashFx = new THREE.Mesh(
+      new THREE.TorusGeometry(0.55, 0.07, 8, 24, Math.PI * 0.95),
+      new THREE.MeshBasicMaterial({ color: 0xffd0da, transparent: true, opacity: 0.95 })
+    );
+    slashFx.visible = false;
+    slashFx.userData = { t: 99 };
+    scene.add(slashFx);
+    // arrow projectile (archer)
+    const arrowFx = new THREE.Group();
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.55, 6), new THREE.MeshStandardMaterial({ color: 0x8a5a2a }));
+    shaft.rotation.z = Math.PI / 2;
+    const arrowTip = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 6), new THREE.MeshStandardMaterial({ color: 0xd8dde5, metalness: 0.8 }));
+    arrowTip.rotation.z = -Math.PI / 2;
+    arrowTip.position.x = 0.33;
+    const fletch = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.12, 4), new THREE.MeshStandardMaterial({ color: 0xe06070 }));
+    fletch.rotation.z = Math.PI / 2;
+    fletch.position.x = -0.3;
+    arrowFx.add(shaft, arrowTip, fletch);
+    arrowFx.visible = false;
+    scene.add(arrowFx);
+    // arrow rain (archer ultimate): 5 falling arrows, each with a glowing light beam
+    const rainArrows = [];
+    for (let i = 0; i < 5; i++) {
+      const a = arrowFx.clone();
+      a.rotation.z = -Math.PI / 2; // point downward
+      // ✨ glowing light beam trailing behind each falling arrow
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.05, 0.01, 1.6, 8, 1, true),
+        new THREE.MeshBasicMaterial({ color: 0xfff0a0, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false })
+      );
+      beam.position.y = 0.9; // extends up above the arrow (the tail of its descent)
+      const glowTip = new THREE.Mesh(
+        new THREE.SphereGeometry(0.09, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 })
+      );
+      a.add(beam, glowTip);
+      a.userData.beam = beam; a.userData.glowTip = glowTip;
+      a.visible = false;
+      scene.add(a);
+      rainArrows.push(a);
+    }
+    // archer multi-shot: up to 3 arrows fired at once
+    const multiArrows = [];
+    for (let i = 0; i < 3; i++) {
+      const a = arrowFx.clone();
+      a.visible = false;
+      scene.add(a);
+      multiArrows.push(a);
+    }
+    // magic orb projectile (mage)
+    const orbFx = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, 14, 14),
+      new THREE.MeshStandardMaterial({ color: 0xc9a8f0, emissive: 0x8a3af0, emissiveIntensity: 1.2, transparent: true })
+    );
+    orbFx.visible = false;
+    scene.add(orbFx);
+    // rotating magic circle under the caster (mage)
+    const magicCircle = new THREE.Group();
+    // 🌟 8-pointed star made of two crossed squares (as a ring outline via thin shapes)
+    const make8Star = (rOuter, rInner, thick, color, opacity) => {
+      const g = new THREE.Group();
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide });
+      // outer ring
+      const ring = new THREE.Mesh(new THREE.RingGeometry(rOuter - thick, rOuter, 40), mat);
+      g.add(ring);
+      // 8 points as thin triangles pointing outward
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(rInner * 0.28, rOuter - rInner + 0.12, 3), mat);
+        spike.position.set(Math.cos(a) * (rOuter - 0.02), Math.sin(a) * (rOuter - 0.02), 0);
+        spike.rotation.z = a - Math.PI / 2;
+        g.add(spike);
+      }
+      // inner ring
+      const inner = new THREE.Mesh(new THREE.RingGeometry(rInner - thick * 0.7, rInner, 32), mat);
+      g.add(inner);
+      return g;
+    };
+    // three nested star-rings, each a separate layer so they can spin independently
+    const mcStar1 = make8Star(0.82, 0.58, 0.05, 0xb07ae0, 0.85); // outer
+    const mcStar2 = make8Star(0.58, 0.38, 0.045, 0xd9a8ff, 0.8);  // middle
+    const mcStar3 = make8Star(0.36, 0.20, 0.04, 0xf0d0ff, 0.75);  // inner
+    magicCircle.add(mcStar1, mcStar2, mcStar3);
+    magicCircle.userData = { stars: [mcStar1, mcStar2, mcStar3] };
+    // 🔝 always draw the circle in front of everything (no depth test)
+    magicCircle.renderOrder = 999;
+    magicCircle.traverse((o) => { if (o.material) { o.material.depthTest = false; o.material.depthWrite = false; o.renderOrder = 999; } });
+    magicCircle.rotation.x = -Math.PI / 2;
+    magicCircle.position.y = 0.03;
+    magicCircle.visible = false;
+    scene.add(magicCircle);
+    // expanding shockwave ring (mage impact / boss hits)
+    const shockFx = new THREE.Mesh(
+      new THREE.RingGeometry(0.3, 0.42, 28),
+      new THREE.MeshBasicMaterial({ color: 0xd9a8ff, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+    );
+    shockFx.rotation.x = -Math.PI / 2;
+    shockFx.visible = false;
+    shockFx.userData = { t: 99 };
+    scene.add(shockFx);
+    const fireSlash = (pos, color) => {
+      if (G.sfx) G.sfx.slash();
+      slashFx.material.color.setHex(color);
+      slashFx.position.set(pos.x, 1.0, pos.z + 0.2);
+      slashFx.rotation.set(0, 0, Math.random() * Math.PI);
+      slashFx.scale.setScalar(0.7);
+      slashFx.visible = true;
+      slashFx.userData.t = 0;
+    };
+    const fireShock = (pos, color) => {
+      shockFx.material.color.setHex(color);
+      shockFx.position.set(pos.x, 0.05, pos.z);
+      shockFx.scale.setScalar(0.5);
+      shockFx.visible = true;
+      shockFx.userData.t = 0;
+    };
+
+    // ✨ per-skill impact effects — each skill type looks different
+    const activeFx = []; // {group, t, dur, update}
+    const spawnSkillFx = (fxType, pos, color) => {
+      const g = new THREE.Group();
+      g.position.set(pos.x, 0, pos.z);
+      scene.add(g);
+      let dur = 0.7, update = null;
+      const col = color || 0xffffff;
+      if (fxType === "fire" || fxType === "orb") {
+        // 🔥 rising fireballs + embers
+        const balls = [];
+        for (let i = 0; i < 7; i++) {
+          const m = new THREE.Mesh(
+            new THREE.SphereGeometry(0.12 + Math.random() * 0.12, 8, 8),
+            new THREE.MeshStandardMaterial({ color: 0xff6a2a, emissive: 0xff3a10, emissiveIntensity: 1.3, transparent: true })
+          );
+          m.position.set((Math.random() - 0.5) * 0.7, 0.6 + Math.random() * 0.4, (Math.random() - 0.5) * 0.7);
+          m.userData.vy = 1.5 + Math.random() * 1.5;
+          g.add(m); balls.push(m);
+        }
+        dur = 0.7;
+        update = (pr) => balls.forEach((m) => { m.position.y += m.userData.vy * 0.03; m.material.opacity = 1 - pr; m.scale.setScalar(1 + pr); });
+      } else if (fxType === "bolt") {
+        // ⚡ lightning strike from above (zigzag)
+        const pts = [];
+        for (let i = 0; i <= 8; i++) pts.push(new THREE.Vector3((Math.random() - 0.5) * 0.5, 4 - i * 0.5, (Math.random() - 0.5) * 0.5));
+        const geo = new THREE.BufferGeometry().setFromPoints(pts);
+        const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xfff460, transparent: true, linewidth: 3 }));
+        g.add(line);
+        const flash = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 12), new THREE.MeshBasicMaterial({ color: 0xfff460, transparent: true, opacity: 0.8 }));
+        flash.position.y = 1.0; g.add(flash);
+        dur = 0.5;
+        update = (pr) => { line.material.opacity = 1 - pr; flash.material.opacity = 0.8 * (1 - pr); flash.scale.setScalar(1 + pr * 2); };
+      } else if (fxType === "ice") {
+        // ❄️ ice shards stab upward
+        const shards = [];
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2;
+          const m = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.6, 5), new THREE.MeshStandardMaterial({ color: 0xaef0ff, emissive: 0x4aa0e0, emissiveIntensity: 0.8, transparent: true, opacity: 0.9 }));
+          m.position.set(Math.cos(a) * 0.4, 0, Math.sin(a) * 0.4);
+          m.userData.a = a; g.add(m); shards.push(m);
+        }
+        dur = 0.8;
+        update = (pr) => shards.forEach((m) => { m.position.y = pr < 0.5 ? pr * 1.4 : 0.7; m.material.opacity = 0.9 * (1 - Math.max(0, (pr - 0.5) * 2)); });
+      } else if (fxType === "poison") {
+        // ☠️ bubbling poison cloud
+        const bubbles = [];
+        for (let i = 0; i < 8; i++) {
+          const m = new THREE.Mesh(new THREE.SphereGeometry(0.15 + Math.random() * 0.15, 8, 8), new THREE.MeshStandardMaterial({ color: 0x8ad04a, emissive: 0x4a8a20, emissiveIntensity: 0.7, transparent: true, opacity: 0.75 }));
+          m.position.set((Math.random() - 0.5) * 1, 0.3 + Math.random() * 0.5, (Math.random() - 0.5) * 1);
+          m.userData.vy = 0.4 + Math.random() * 0.6; g.add(m); bubbles.push(m);
+        }
+        dur = 0.9;
+        update = (pr) => bubbles.forEach((m) => { m.position.y += m.userData.vy * 0.02; m.material.opacity = 0.75 * (1 - pr); m.scale.setScalar(1 + pr * 0.5); });
+      } else if (fxType === "shadow") {
+        // 🌑 dark vortex + slashes
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.12, 10, 24), new THREE.MeshStandardMaterial({ color: 0x3a2a5a, emissive: 0x6a3ad0, emissiveIntensity: 1, transparent: true }));
+        ring.rotation.x = Math.PI / 2; ring.position.y = 0.8; g.add(ring);
+        const orb = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 12), new THREE.MeshBasicMaterial({ color: 0x1a0a2a, transparent: true, opacity: 0.85 }));
+        orb.position.y = 0.8; g.add(orb);
+        dur = 0.7;
+        update = (pr) => { ring.rotation.z = pr * 8; ring.scale.setScalar(1 - pr * 0.5); ring.material.opacity = 1 - pr; orb.material.opacity = 0.85 * (1 - pr); orb.scale.setScalar(1 + pr); };
+      } else if (fxType === "quake") {
+        // 🌍 ground rocks burst up
+        const rocks = [];
+        for (let i = 0; i < 7; i++) {
+          const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.15 + Math.random() * 0.12), new THREE.MeshStandardMaterial({ color: 0x8a6a3a, emissive: 0x3a2a10, emissiveIntensity: 0.3 }));
+          m.position.set((Math.random() - 0.5) * 1.2, 0, (Math.random() - 0.5) * 1.2);
+          m.userData.vy = 2 + Math.random() * 2; g.add(m); rocks.push(m);
+        }
+        dur = 0.7;
+        update = (pr) => rocks.forEach((m) => { m.userData.vy -= 0.15; m.position.y = Math.max(0, m.position.y + m.userData.vy * 0.03); m.rotation.x += 0.2; m.rotation.y += 0.15; });
+      } else if (fxType === "pierce") {
+        // 🎯 horizontal shockwave streak (armor-piercing)
+        const streak = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.08, 0.08), new THREE.MeshBasicMaterial({ color: 0x59a0e8, transparent: true, opacity: 0.9 }));
+        streak.position.set(-0.6, 1.4, 0); g.add(streak);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.06, 8, 20), new THREE.MeshStandardMaterial({ color: 0x59a0e8, emissive: 0x2a70c0, emissiveIntensity: 1 }));
+        ring.position.y = 1.4; g.add(ring);
+        dur = 0.4;
+        update = (pr) => { streak.material.opacity = 0.9 * (1 - pr); streak.scale.x = 1 + pr; ring.scale.setScalar(1 + pr * 2.5); ring.material.opacity = 1 - pr; };
+      } else if (fxType === "snipe") {
+        // 💥 crit starburst
+        const rays = [];
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          const m = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 0.05), new THREE.MeshBasicMaterial({ color: 0xf5c542, transparent: true }));
+          m.position.set(Math.cos(a) * 0.35, 1.3, Math.sin(a) * 0.35);
+          m.rotation.y = -a; g.add(m); rays.push(m);
+        }
+        dur = 0.45;
+        update = (pr) => rays.forEach((m) => { m.scale.x = 1 + pr * 2; m.material.opacity = 1 - pr; });
+      } else if (fxType === "multi") {
+        // 🏹 three impact pops in a spread
+        const pops = [];
+        for (const dy of [-0.5, 0, 0.5]) {
+          const m = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 10), new THREE.MeshStandardMaterial({ color: 0x7ba05b, emissive: 0x4a7030, emissiveIntensity: 0.9, transparent: true }));
+          m.position.set(0, 1.4 + dy, 0); g.add(m); pops.push(m);
+        }
+        dur = 0.5;
+        update = (pr) => pops.forEach((m) => { m.scale.setScalar(1 + pr * 1.5); m.material.opacity = 1 - pr; });
+      } else if (fxType === "hellfire") {
+        // 🔥 เพลิงนรก — a massive fire pillar erupts from the ground, engulfing the target
+        const flames = [];
+        for (let i = 0; i < 26; i++) {
+          const w = 0.14 + Math.random() * 0.24;
+          const tall = 0.6 + Math.random() * 0.9;
+          const hot = Math.random();
+          const m = new THREE.Mesh(new THREE.ConeGeometry(w, tall, 6),
+            new THREE.MeshStandardMaterial({ color: hot < 0.3 ? 0xffe86a : hot < 0.7 ? 0xff7a1a : 0xd82a10, emissive: hot < 0.3 ? 0xffcc40 : 0xff4a10, emissiveIntensity: 1.6, transparent: true }));
+          const r = Math.random() * 0.85;
+          const a = Math.random() * Math.PI * 2;
+          m.position.set(Math.cos(a) * r, -0.4, Math.sin(a) * r);
+          m.userData = { delay: Math.random() * 0.35, peak: 1.0 + Math.random() * 1.4, sway: Math.random() * 6, tall };
+          g.add(m); flames.push(m);
+        }
+        // dark smoke puffs rising above
+        const smoke = [];
+        for (let i = 0; i < 8; i++) {
+          const m = new THREE.Mesh(new THREE.SphereGeometry(0.2 + Math.random() * 0.2, 8, 8), new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 1, transparent: true, opacity: 0 }));
+          m.position.set((Math.random() - 0.5) * 1.2, 1.5, (Math.random() - 0.5) * 1.2);
+          m.userData = { vy: 0.8 + Math.random() * 0.8 };
+          g.add(m); smoke.push(m);
+        }
+        // big scorch ring + strong light
+        const scorch = new THREE.Mesh(new THREE.RingGeometry(0.4, 1.25, 28), new THREE.MeshBasicMaterial({ color: 0xff4a1a, transparent: true, opacity: 0.75, side: THREE.DoubleSide }));
+        scorch.rotation.x = -Math.PI / 2; scorch.position.y = 0.02; g.add(scorch);
+        const fireLight = new THREE.PointLight(0xff5a1a, 3, 6); fireLight.position.y = 1.2; g.add(fireLight);
+        dur = 1.3;
+        update = (pr) => {
+          flames.forEach((m) => {
+            const lp = Math.max(0, Math.min(1, (pr - m.userData.delay) / (1 - m.userData.delay)));
+            m.position.y = -0.4 + Math.sin(lp * Math.PI) * m.userData.peak;
+            m.rotation.z = Math.sin(pr * 12 + m.userData.sway) * 0.25;
+            m.scale.set(1 + Math.sin(pr * 9 + m.userData.sway) * 0.15, 0.6 + Math.sin(lp * Math.PI) * 1.6, 1);
+            m.material.opacity = Math.sin(lp * Math.PI);
+          });
+          smoke.forEach((m) => { m.position.y += m.userData.vy * 0.03; m.material.opacity = (pr > 0.4 ? (pr - 0.4) / 0.6 : 0) * 0.5 * (1 - pr); m.scale.setScalar(1 + pr * 1.5); });
+          scorch.material.opacity = 0.75 * (1 - pr); scorch.scale.setScalar(1 + pr * 0.5);
+          fireLight.intensity = 3 * Math.sin(pr * Math.PI);
+        };
+      } else if (fxType === "icespear") {
+        // ❄️ หอกน้ำแข็ง — big jagged ice spears erupt from the ground, then shatter
+        const spears = [];
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * Math.PI * 2 + Math.random() * 0.3;
+          const r = 0.1 + Math.random() * 0.6;
+          const tall = 1.0 + Math.random() * 0.7;
+          const grp = new THREE.Group();
+          const m = new THREE.Mesh(new THREE.ConeGeometry(0.18, tall, 5),
+            new THREE.MeshStandardMaterial({ color: 0xdaf7ff, emissive: 0x5ab0f0, emissiveIntensity: 1.0, transparent: true, opacity: 0.94, metalness: 0.4, roughness: 0.08 }));
+          m.position.y = tall / 2;
+          // small ice crystal offshoots for a jagged look
+          const chip = new THREE.Mesh(new THREE.ConeGeometry(0.08, tall * 0.4, 4), m.material);
+          chip.position.set(0.1, tall * 0.35, 0); chip.rotation.z = -0.6;
+          grp.add(m, chip);
+          grp.position.set(Math.cos(a) * r, -tall, Math.sin(a) * r);
+          grp.rotation.z = (Math.random() - 0.5) * 0.3;
+          grp.userData = { delay: (i / 10) * 0.4, tall };
+          g.add(grp); spears.push(grp);
+        }
+        // shatter shards
+        const shards = [];
+        for (let i = 0; i < 20; i++) {
+          const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.1, 0), new THREE.MeshStandardMaterial({ color: 0xbef2ff, emissive: 0x5ab0f0, emissiveIntensity: 0.9, transparent: true, metalness: 0.3, roughness: 0.1 }));
+          m.position.set(0, 1.0, 0); m.visible = false;
+          m.userData = { vx: (Math.random() - 0.5) * 4, vy: 1.5 + Math.random() * 2.5, vz: (Math.random() - 0.5) * 4 };
+          g.add(m); shards.push(m);
+        }
+        // frost mist ring + cold light
+        const mist = new THREE.Mesh(new THREE.RingGeometry(0.3, 1.1, 24), new THREE.MeshBasicMaterial({ color: 0xaef0ff, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
+        mist.rotation.x = -Math.PI / 2; mist.position.y = 0.02; g.add(mist);
+        const iceLight = new THREE.PointLight(0x6ac0f0, 1.6, 5); iceLight.position.y = 1; g.add(iceLight);
+        dur = 1.2;
+        update = (pr) => {
+          spears.forEach((grp) => {
+            const lp = Math.max(0, Math.min(1, (pr - grp.userData.delay) / 0.3));
+            if (pr < 0.62) { grp.position.y = -grp.userData.tall + lp * grp.userData.tall; grp.children.forEach((c) => (c.material.opacity = 0.94)); }
+            else { grp.children.forEach((c) => (c.material.opacity = Math.max(0, 0.94 - (pr - 0.62) * 5))); }
+          });
+          if (pr >= 0.58) {
+            const sp = (pr - 0.58) / 0.42;
+            shards.forEach((m) => { m.visible = true; m.position.x += m.userData.vx * 0.03; m.position.y = 1.0 + m.userData.vy * sp - sp * sp * 3.5; m.position.z += m.userData.vz * 0.03; m.rotation.x += 0.4; m.rotation.y += 0.3; m.material.opacity = 1 - sp; });
+          }
+          mist.material.opacity = 0.5 * (1 - pr); mist.scale.setScalar(1 + pr * 0.6);
+          iceLight.intensity = 1.6 * Math.sin(pr * Math.PI);
+        };
+      } else if (fxType === "thunderstorm") {
+        // ⚡ สายฟ้าฟาด — a dark cloud gathers overhead, then rains down bolts
+        const cloud = new THREE.Group();
+        for (let i = 0; i < 6; i++) {
+          const puff = new THREE.Mesh(new THREE.SphereGeometry(0.3 + Math.random() * 0.2, 10, 10), new THREE.MeshStandardMaterial({ color: 0x2a2a3a, roughness: 1, transparent: true, opacity: 0.9 }));
+          puff.position.set((Math.random() - 0.5) * 1.4, 3.2 + Math.random() * 0.2, (Math.random() - 0.5) * 0.8);
+          puff.scale.y = 0.7; cloud.add(puff);
+        }
+        g.add(cloud);
+        const boltLight = new THREE.PointLight(0xf5e042, 0, 5); boltLight.position.y = 2; g.add(boltLight);
+        // several zigzag bolts fire in sequence
+        const bolts = [];
+        for (let b = 0; b < 4; b++) {
+          const pts = [];
+          const ox = (Math.random() - 0.5) * 0.8;
+          for (let i = 0; i <= 7; i++) pts.push(new THREE.Vector3(ox + (Math.random() - 0.5) * 0.4, 3 - i * 0.42, (Math.random() - 0.5) * 0.4));
+          const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xfff460, transparent: true, opacity: 0 }));
+          g.add(line); bolts.push({ line, fireAt: 0.3 + b * 0.16 });
+        }
+        dur = 1.2;
+        update = (pr) => {
+          cloud.children.forEach((p, i) => { p.position.x += Math.sin(pr * 6 + i) * 0.004; p.material.opacity = 0.9 * Math.min(1, pr * 3) * (1 - Math.max(0, (pr - 0.85) * 6)); });
+          let anyFlash = false;
+          bolts.forEach((b) => {
+            const local = pr - b.fireAt;
+            if (local > 0 && local < 0.12) { b.line.material.opacity = 1; anyFlash = true; }
+            else b.line.material.opacity = Math.max(0, b.line.material.opacity - 0.15);
+          });
+          boltLight.intensity = anyFlash ? 3 : boltLight.intensity * 0.7;
+        };
+      } else if (fxType === "healbless") {
+        // ✨ แสงเยียวยา — sparkles swirl up around the CASTER + a soft holy glow
+        const sparks = [];
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2;
+          const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xfff0b0 : 0x8affa0, transparent: true }));
+          m.position.set(Math.cos(a) * 0.5, 0, Math.sin(a) * 0.5);
+          m.userData = { a, rise: 1.5 + Math.random() * 1.2 };
+          g.add(m); sparks.push(m);
+        }
+        // rising holy column + halo ring
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 8, 24), new THREE.MeshBasicMaterial({ color: 0x9affb0, transparent: true, opacity: 0.8 }));
+        halo.rotation.x = -Math.PI / 2; halo.position.y = 0.1; g.add(halo);
+        const healLight = new THREE.PointLight(0x9affb0, 1.5, 4); healLight.position.y = 1.2; g.add(healLight);
+        g.position.y = 0; // caster base
+        dur = 1.1;
+        update = (pr) => {
+          sparks.forEach((m) => { m.position.y = pr * m.userData.rise; m.rotation.y += 0.3; const rr = 0.5 * (1 - pr * 0.4); m.position.x = Math.cos(m.userData.a + pr * 4) * rr; m.position.z = Math.sin(m.userData.a + pr * 4) * rr; m.material.opacity = Math.sin(pr * Math.PI); });
+          halo.position.y = 0.1 + pr * 1.6; halo.material.opacity = 0.8 * (1 - pr); halo.scale.setScalar(1 - pr * 0.3);
+          healLight.intensity = 1.5 * Math.sin(pr * Math.PI);
+        };
+      } else if (fxType === "swordbeam") {
+        // ⚔️☁️ a giant blade of light plunges from a cloud in the sky into the target
+        const beamCol = color || 0xfff2c0;
+        const cloud = new THREE.Group();
+        for (let i = 0; i < 7; i++) {
+          const puff = new THREE.Mesh(new THREE.SphereGeometry(0.4 + Math.random() * 0.3, 10, 10), new THREE.MeshStandardMaterial({ color: 0x3a3040, roughness: 1, transparent: true, opacity: 0.92 }));
+          puff.position.set((Math.random() - 0.5) * 2, 4.6 + Math.random() * 0.3, (Math.random() - 0.5) * 1.2);
+          puff.scale.y = 0.6; cloud.add(puff);
+        }
+        g.add(cloud);
+        const sword = new THREE.Group();
+        const bladeMat = new THREE.MeshStandardMaterial({ color: beamCol, emissive: beamCol, emissiveIntensity: 2, transparent: true, opacity: 0.95 });
+        const blade = new THREE.Mesh(new THREE.ConeGeometry(0.28, 2.6, 4), bladeMat);
+        blade.rotation.x = Math.PI; blade.position.y = 1.3;
+        const guard = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.16, 0.16), bladeMat);
+        guard.position.y = 2.6;
+        const hilt = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.5, 8), bladeMat);
+        hilt.position.y = 2.9;
+        sword.add(blade, guard, hilt);
+        const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.15, 3.2, 12, 1, true), new THREE.MeshBasicMaterial({ color: beamCol, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }));
+        beam.position.y = 1.6; sword.add(beam);
+        sword.position.y = 4.2;
+        g.add(sword);
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.6, 24), new THREE.MeshBasicMaterial({ color: beamCol, transparent: true, opacity: 0, side: THREE.DoubleSide }));
+        ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03; g.add(ring);
+        const beamLight = new THREE.PointLight(beamCol, 0, 6); beamLight.position.y = 1.5; g.add(beamLight);
+        g.renderOrder = 998;
+        dur = 1.0;
+        update = (pr) => {
+          cloud.children.forEach((pf, i) => { pf.material.opacity = 0.92 * Math.min(1, pr * 4) * (1 - Math.max(0, (pr - 0.8) * 5)); pf.position.x += Math.sin(pr * 5 + i) * 0.003; });
+          if (pr < 0.35) {
+            const dp = pr / 0.35;
+            sword.position.y = 4.2 - dp * dp * 4.2;
+            sword.children.forEach((c) => (c.material.opacity = c === beam ? 0.3 : 0.95));
+          } else {
+            sword.position.y = 0;
+            const fade = (pr - 0.35) / 0.65;
+            sword.children.forEach((c) => (c.material.opacity = (c === beam ? 0.3 : 0.95) * (1 - fade)));
+            ring.material.opacity = 0.8 * Math.sin(fade * Math.PI);
+            ring.scale.setScalar(1 + fade * 3);
+            beamLight.intensity = 4 * (1 - fade);
+          }
+          if (pr >= 0.33 && pr < 0.4) beamLight.intensity = 5;
+        };
+      } else if (fxType === "crescent") {
+        // 🌙 ฟันวงกว้าง — a glowing crescent-moon blade flies at the target with a bright edge + sparks
+        const cc = color || 0xd9536b;
+        const crescent = new THREE.Mesh(
+          new THREE.RingGeometry(0.5, 0.9, 32, 1, Math.PI * 0.12, Math.PI * 0.85),
+          new THREE.MeshBasicMaterial({ color: cc, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+        );
+        // bright inner edge
+        const edge = new THREE.Mesh(
+          new THREE.RingGeometry(0.78, 0.9, 32, 1, Math.PI * 0.12, Math.PI * 0.85),
+          new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, side: THREE.DoubleSide })
+        );
+        crescent.add(edge);
+        crescent.position.set(-1.6, 1.0, 0); crescent.rotation.z = -0.6;
+        g.add(crescent);
+        // motion-blur trail copies
+        const trail = [];
+        for (let i = 0; i < 5; i++) {
+          const c2 = crescent.clone(); c2.material = crescent.material.clone(); c2.children[0].material = c2.children[0].material.clone();
+          g.add(c2); trail.push(c2);
+        }
+        // spark particles flung off the arc
+        const sparks = [];
+        for (let i = 0; i < 10; i++) {
+          const m = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 6), new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true }));
+          m.userData = { vx: 0.5 + Math.random() * 1.5, vy: (Math.random() - 0.5) * 2 }; m.visible = false; g.add(m); sparks.push(m);
+        }
+        const slLight = new THREE.PointLight(cc, 0, 4); g.add(slLight);
+        g.renderOrder = 998;
+        dur = 0.55;
+        update = (pr) => {
+          const x = -1.6 + pr * 2.1;
+          crescent.position.x = x;
+          crescent.rotation.z = -0.6 + pr * 1.4;
+          crescent.scale.setScalar(1 + pr * 0.7);
+          crescent.material.opacity = 0.9 * (1 - pr * 0.4);
+          crescent.children[0].material.opacity = 0.95 * (1 - pr * 0.3);
+          trail.forEach((c2, i) => { const tp = Math.max(0, pr - (i + 1) * 0.06); c2.position.x = -1.6 + tp * 2.1; c2.rotation.z = -0.6 + tp * 1.4; c2.scale.copy(crescent.scale); const o = (0.5 - i * 0.09) * (1 - pr); c2.material.opacity = o; c2.children[0].material.opacity = o; });
+          slLight.position.set(x, 1, 0); slLight.intensity = 2.5 * (1 - pr);
+          if (pr > 0.5) sparks.forEach((m) => { m.visible = true; const sp = (pr - 0.5) / 0.5; m.position.set(0.4 + m.userData.vx * sp, 1 + m.userData.vy * sp, 0); m.material.opacity = 1 - sp; });
+        };
+      } else if (fxType === "shieldbash") {
+        // 🛡️ โล่กระแทก — a heavy shield charges forward, slams with a shockwave + dust
+        const shield = new THREE.Group();
+        const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.14, 24), new THREE.MeshStandardMaterial({ color: 0xc0a050, metalness: 0.7, roughness: 0.25, emissive: 0x5a4210, emissiveIntensity: 0.35 }));
+        disc.rotation.z = Math.PI / 2;
+        const rim = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.06, 10, 24), new THREE.MeshStandardMaterial({ color: 0xf5d060, metalness: 0.8, roughness: 0.2 }));
+        rim.rotation.y = Math.PI / 2;
+        const boss = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 14), new THREE.MeshStandardMaterial({ color: 0xf5e090, metalness: 0.8, roughness: 0.15, emissive: 0x6a5010, emissiveIntensity: 0.3 }));
+        boss.position.x = 0.09;
+        shield.add(disc, rim, boss);
+        shield.position.set(-1.6, 1.0, 0);
+        g.add(shield);
+        // motion streak lines behind the charge
+        const streaks = [];
+        for (let i = 0; i < 5; i++) {
+          const ln = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.03, 0.03), new THREE.MeshBasicMaterial({ color: 0xffe680, transparent: true, opacity: 0 }));
+          ln.position.set(-1.6, 0.7 + i * 0.15, 0); g.add(ln); streaks.push(ln);
+        }
+        // shockwave ring + impact sparks + dust
+        const wave = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.4, 24), new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0, side: THREE.DoubleSide }));
+        wave.position.set(0.5, 1, 0); g.add(wave);
+        const pops = [];
+        for (let i = 0; i < 12; i++) {
+          const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 6), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffe680 : 0xd0b070, transparent: true }));
+          m.visible = false; m.userData = { a: (i / 12) * Math.PI * 2, sp: 0.7 + Math.random() * 0.6 }; g.add(m); pops.push(m);
+        }
+        const bashLight = new THREE.PointLight(0xffd060, 0, 4); bashLight.position.set(0.5, 1, 0); g.add(bashLight);
+        dur = 0.6;
+        update = (pr) => {
+          if (pr < 0.5) {
+            const cp = pr / 0.5;
+            shield.position.x = -1.6 + cp * 2.1;
+            shield.rotation.x = cp * 3;
+            streaks.forEach((ln, i) => { ln.position.x = shield.position.x - 0.6 - i * 0.1; ln.material.opacity = 0.5 * cp; });
+          } else {
+            shield.position.x = 0.5;
+            streaks.forEach((ln) => (ln.material.opacity = 0));
+            const bp = (pr - 0.5) / 0.5;
+            wave.material.opacity = 0.9 * (1 - bp); wave.scale.setScalar(1 + bp * 4);
+            bashLight.intensity = 3 * (1 - bp);
+            pops.forEach((m) => { m.visible = true; const r = bp * m.userData.sp; m.position.set(0.5 + Math.cos(m.userData.a) * r, 1.0 + Math.sin(m.userData.a) * r, 0); m.material.opacity = 1 - bp; m.scale.setScalar(1 + bp * 0.5); });
+            shield.children.forEach((c) => { c.material.transparent = true; c.material.opacity = 1 - bp * 0.6; });
+          }
+        };
+      } else if (fxType === "crossslash") {
+        // 🔥 คลั่งสงคราม — two burning slashes carve an X, with fiery core lines + embers
+        const cc = color || 0xf5652e;
+        const mkSlash = (rot) => {
+          const grp = new THREE.Group();
+          const outer = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.22), new THREE.MeshBasicMaterial({ color: cc, transparent: true, opacity: 0, side: THREE.DoubleSide }));
+          const core = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.07), new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0, side: THREE.DoubleSide }));
+          grp.add(outer, core); grp.rotation.z = rot; grp.position.y = 1.0;
+          return grp;
+        };
+        const slash1 = mkSlash(Math.PI / 4), slash2 = mkSlash(-Math.PI / 4);
+        g.add(slash1, slash2);
+        // embers flying off the X
+        const embers = [];
+        for (let i = 0; i < 14; i++) {
+          const m = new THREE.Mesh(new THREE.SphereGeometry(0.045, 5, 5), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffd23a : 0xff5a1a, transparent: true }));
+          m.userData = { vx: (Math.random() - 0.5) * 2.4, vy: (Math.random() - 0.5) * 2.4 }; m.visible = false; g.add(m); embers.push(m);
+        }
+        const xLight = new THREE.PointLight(cc, 0, 4); xLight.position.y = 1; g.add(xLight);
+        g.renderOrder = 998;
+        dur = 0.7;
+        const setSlash = (grp, o, sx) => { grp.children[0].material.opacity = o; grp.children[1].material.opacity = Math.min(1, o * 1.3); grp.scale.x = sx; };
+        update = (pr) => {
+          const o1 = pr < 0.25 ? pr / 0.25 : Math.max(0, 1 - (pr - 0.25) / 0.75);
+          setSlash(slash1, o1, 0.2 + Math.min(1, pr / 0.25) * 0.8);
+          const o2 = pr < 0.28 ? 0 : (pr < 0.5 ? (pr - 0.28) / 0.22 : Math.max(0, 1 - (pr - 0.5) / 0.5));
+          setSlash(slash2, o2, pr < 0.28 ? 0.2 : 0.2 + Math.min(1, (pr - 0.28) / 0.22) * 0.8);
+          xLight.intensity = 3 * Math.sin(pr * Math.PI);
+          if (pr > 0.45) embers.forEach((m) => { m.visible = true; const sp = (pr - 0.45) / 0.55; m.position.set(m.userData.vx * sp, 1 + m.userData.vy * sp - sp * sp * 0.8, 0); m.material.opacity = 1 - sp; });
+        };
+      } else if (fxType === "earthsplit") {
+        // 🌍 ปฐพีแยก — the ground splits with glowing lava cracks + jagged rock slabs erupt
+        const cracks = [];
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + 0.2;
+          const len = 1.0 + Math.random() * 1.0;
+          const crack = new THREE.Mesh(new THREE.PlaneGeometry(0.16, len), new THREE.MeshBasicMaterial({ color: 0xff6a1a, transparent: true, opacity: 0, side: THREE.DoubleSide }));
+          crack.rotation.x = -Math.PI / 2; crack.rotation.z = a; crack.position.set(Math.cos(a) * len * 0.5, 0.04, Math.sin(a) * len * 0.5);
+          // glowing hot core inside the crack
+          const hot = new THREE.Mesh(new THREE.PlaneGeometry(0.06, len), new THREE.MeshBasicMaterial({ color: 0xffe040, transparent: true, opacity: 0, side: THREE.DoubleSide }));
+          hot.position.z = 0.001; crack.add(hot);
+          g.add(crack); cracks.push(crack);
+        }
+        // jagged rock slabs (not round) erupting
+        const rocks = [];
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2;
+          const r = 0.3 + Math.random() * 0.7;
+          const rock = new THREE.Mesh(new THREE.ConeGeometry(0.16 + Math.random() * 0.1, 0.4 + Math.random() * 0.3, 4), new THREE.MeshStandardMaterial({ color: 0x7a5a3a, roughness: 1, flatShading: true, emissive: 0x3a1a08, emissiveIntensity: 0.2 }));
+          rock.position.set(Math.cos(a) * r, -0.5, Math.sin(a) * r);
+          rock.rotation.z = (Math.random() - 0.5) * 0.5;
+          rock.userData = { delay: Math.random() * 0.25, up: 0.4 + Math.random() * 0.5, spin: Math.random() * 5 };
+          g.add(rock); rocks.push(rock);
+        }
+        // dust cloud + rising debris + light
+        const dust = new THREE.Mesh(new THREE.RingGeometry(0.2, 1.3, 24), new THREE.MeshBasicMaterial({ color: 0xc0a070, transparent: true, opacity: 0.55, side: THREE.DoubleSide }));
+        dust.rotation.x = -Math.PI / 2; dust.position.y = 0.03; g.add(dust);
+        const debris = [];
+        for (let i = 0; i < 10; i++) {
+          const m = new THREE.Mesh(new THREE.TetrahedronGeometry(0.06), new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 1, flatShading: true }));
+          m.userData = { vx: (Math.random() - 0.5) * 2, vy: 1.5 + Math.random() * 1.5, vz: (Math.random() - 0.5) * 2 }; m.visible = false; g.add(m); debris.push(m);
+        }
+        const eqLight = new THREE.PointLight(0xff6a1a, 0, 4); eqLight.position.y = 0.3; g.add(eqLight);
+        dur = 0.95;
+        update = (pr) => {
+          cracks.forEach((c) => { const o = Math.sin(Math.min(1, pr * 1.5) * Math.PI); c.material.opacity = 0.9 * o; c.children[0].material.opacity = o; });
+          rocks.forEach((m) => {
+            const lp = Math.max(0, Math.min(1, (pr - m.userData.delay) / (1 - m.userData.delay)));
+            m.position.y = -0.5 + Math.sin(lp * Math.PI) * m.userData.up;
+            m.rotation.z = m.userData.spin + lp;
+          });
+          dust.material.opacity = 0.55 * (1 - pr); dust.scale.setScalar(1 + pr * 1.0);
+          eqLight.intensity = 2.5 * Math.sin(pr * Math.PI);
+          if (pr > 0.3) debris.forEach((m) => { m.visible = true; const sp = (pr - 0.3) / 0.7; m.position.set(m.userData.vx * sp, m.userData.vy * sp - sp * sp * 3, m.userData.vz * sp); m.rotation.x += 0.3; m.rotation.y += 0.2; m.material.opacity = 1 - sp; m.material.transparent = true; });
+        };
+      } else if (fxType === "arrowpierce" || fxType === "arrowsnipe" || fxType === "arrowpoison") {
+        // 🏹 a single arrow streaks in from the archer, with a glowing trail, and bursts on impact
+        const cc = fxType === "arrowpoison" ? 0x9a4ad0 : fxType === "arrowsnipe" ? 0xff6a1a : (color || 0x59a0e8);
+        const startX = -2.6; // fly in from the archer's side toward the enemy (+x)
+        // arrow built pointing along +X (its travel direction)
+        const arrow = new THREE.Group();
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 6), new THREE.MeshStandardMaterial({ color: 0x8a6a3a }));
+        shaft.rotation.z = -Math.PI / 2; // lie flat along X
+        const head = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 4), new THREE.MeshStandardMaterial({ color: cc, emissive: cc, emissiveIntensity: 1, metalness: 0.6 }));
+        head.rotation.z = -Math.PI / 2; head.position.x = 0.33; // tip points +X (forward)
+        const fl = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.14, 4), new THREE.MeshStandardMaterial({ color: cc, transparent: true, opacity: 0.9 }));
+        fl.rotation.z = Math.PI / 2; fl.position.x = -0.28; fl.scale.set(1, 1, 0.35); // fletching at the back
+        arrow.add(shaft, head, fl);
+        // 💥🔥 snipe: a BIG burning arrow — flame tongues licking along the shaft
+        const flameParts = [];
+        if (fxType === "arrowsnipe") {
+          arrow.scale.setScalar(1.7);
+          for (let i = 0; i < 5; i++) {
+            const fm = new THREE.Mesh(new THREE.ConeGeometry(0.05 + Math.random() * 0.03, 0.16 + Math.random() * 0.1, 5),
+              new THREE.MeshStandardMaterial({ color: i % 2 ? 0xffd23a : 0xff5a1a, emissive: 0xff4a10, emissiveIntensity: 1.5, transparent: true, opacity: 0.95 }));
+            fm.position.set(-0.2 + i * 0.12, 0.05, 0);
+            fm.rotation.z = 0.6; // flames sweep backward as it flies
+            arrow.add(fm); flameParts.push(fm);
+          }
+        }
+        arrow.position.set(startX, 1, 0);
+        g.add(arrow);
+        // glowing motion trail behind the arrow, along X
+        const trail = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.005, 1.4, 6), new THREE.MeshBasicMaterial({ color: cc, transparent: true, opacity: 0.5, depthWrite: false }));
+        trail.rotation.z = -Math.PI / 2; g.add(trail);
+        const aLight = new THREE.PointLight(cc, 1.2, 3); g.add(aLight);
+        // impact burst pieces
+        const shards = [];
+        const nShard = fxType === "arrowsnipe" ? 16 : 10;
+        for (let i = 0; i < nShard; i++) {
+          const m = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), new THREE.MeshBasicMaterial({ color: cc, transparent: true }));
+          m.visible = false; m.userData = { a: (i / nShard) * Math.PI * 2, sp: 0.8 + Math.random() * 0.7 }; g.add(m); shards.push(m);
+        }
+        // 🫧 poison: purple bubbles floating up off the monster's body
+        const poisonPuffs = [];
+        if (fxType === "arrowpoison") for (let i = 0; i < 10; i++) {
+          const m = new THREE.Mesh(new THREE.SphereGeometry(0.05 + Math.random() * 0.06, 8, 8),
+            new THREE.MeshStandardMaterial({ color: 0xb06ae0, emissive: 0x7a3ad0, emissiveIntensity: 0.6, transparent: true, opacity: 0, roughness: 0.2 }));
+          m.position.set((Math.random() - 0.5) * 0.7, 0.4 + Math.random() * 0.8, (Math.random() - 0.5) * 0.7);
+          m.userData = { vy: 0.5 + Math.random() * 0.8, wob: Math.random() * 6 };
+          g.add(m); poisonPuffs.push(m);
+        }
+        // 🛡️💥 pierce: a shield that CRACKS APART on impact (armor break)
+        const shieldBreak = new THREE.Group();
+        const shieldFrags = [];
+        if (fxType === "arrowpierce") {
+          // shield face made of 6 pie fragments so it can shatter apart
+          for (let i = 0; i < 6; i++) {
+            const a0 = (i / 6) * Math.PI * 2;
+            const frag = new THREE.Mesh(new THREE.CircleGeometry(0.45, 8, a0, Math.PI / 3),
+              new THREE.MeshStandardMaterial({ color: 0xc0a050, metalness: 0.7, roughness: 0.3, emissive: 0x5a4210, emissiveIntensity: 0.4, side: THREE.DoubleSide, transparent: true }));
+            frag.userData = { dx: Math.cos(a0 + Math.PI / 6), dy: Math.sin(a0 + Math.PI / 6), spin: (Math.random() - 0.5) * 6 };
+            shieldBreak.add(frag); shieldFrags.push(frag);
+          }
+          const boss2 = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), new THREE.MeshStandardMaterial({ color: 0xf5d060, metalness: 0.8, roughness: 0.2, transparent: true }));
+          shieldBreak.add(boss2); shieldFrags.push(boss2);
+          shieldBreak.position.set(-0.25, 1, 0);
+          shieldBreak.rotation.y = -Math.PI / 2; // facing the incoming arrow
+          shieldBreak.visible = false;
+          g.add(shieldBreak);
+        }
+        // 🔥 snipe: burning flames erupt on the monster at impact
+        const burnFlames = [];
+        if (fxType === "arrowsnipe") for (let i = 0; i < 10; i++) {
+          const m = new THREE.Mesh(new THREE.ConeGeometry(0.09 + Math.random() * 0.08, 0.3 + Math.random() * 0.3, 5),
+            new THREE.MeshStandardMaterial({ color: i % 2 ? 0xffd23a : 0xff5a1a, emissive: 0xff4a10, emissiveIntensity: 1.5, transparent: true, opacity: 0 }));
+          m.position.set((Math.random() - 0.5) * 0.7, 0.3 + Math.random() * 0.7, (Math.random() - 0.5) * 0.5);
+          m.userData = { sway: Math.random() * 6, up: 0.4 + Math.random() * 0.5 };
+          g.add(m); burnFlames.push(m);
+        }
+        g.renderOrder = 998;
+        // ⚡ electric charge at the archer's side: crackling lightning arcs + a bright core
+        const chargeCore = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 }));
+        chargeCore.position.set(startX, 1, 0); g.add(chargeCore);
+        // several jagged lightning arcs that snap around the charge point
+        const arcs = [];
+        for (let i = 0; i < 6; i++) {
+          const line = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+            new THREE.LineBasicMaterial({ color: cc, transparent: true, opacity: 0 })
+          );
+          g.add(line); arcs.push(line);
+        }
+        // helper to regenerate a jagged bolt around the charge point
+        const zapArc = (line) => {
+          const pts = [];
+          const seg = 5;
+          const ang = Math.random() * Math.PI * 2;
+          const len = 0.35 + Math.random() * 0.4;
+          for (let k = 0; k <= seg; k++) {
+            const t2 = k / seg;
+            pts.push(new THREE.Vector3(
+              startX + Math.cos(ang) * len * t2 + (Math.random() - 0.5) * 0.18,
+              1 + Math.sin(ang) * len * t2 + (Math.random() - 0.5) * 0.18,
+              (Math.random() - 0.5) * 0.18
+            ));
+          }
+          line.geometry.setFromPoints(pts);
+        };
+        arrow.visible = false; trail.visible = false;
+        // ⏱️ only ธนูเจาะเกราะ charges (electric 1s); poison & snipe fire instantly
+        const CHARGE_T = fxType === "arrowpierce" ? 1.0 : 0;
+        const FLY_T = 0.32;
+        dur = CHARGE_T + FLY_T + (fxType === "arrowpierce" ? 0.5 : 0.8); // charge + flight + impact
+        update = (pr) => {
+          const tt = pr * dur; // seconds elapsed
+          if (tt < CHARGE_T) {
+            // 🔋⚡ charging with crackling electricity
+            const cp = tt / CHARGE_T;
+            chargeCore.visible = true;
+            chargeCore.material.opacity = 0.9 * cp;
+            chargeCore.scale.setScalar(0.6 + cp * 1.0 + Math.sin(tt * 40) * 0.1); // flicker
+            aLight.position.set(startX, 1, 0); aLight.intensity = (0.5 + cp * 2.5) * (0.7 + Math.random() * 0.3);
+            arcs.forEach((line, i) => {
+              // snap each arc to a new random shape every few frames for a crackle
+              if (Math.random() < 0.5) zapArc(line);
+              line.material.opacity = (0.5 + cp * 0.5) * (0.4 + Math.random() * 0.6);
+            });
+          } else if (tt < CHARGE_T + FLY_T) {
+            // 🏹 release: single arrow flies flat (parallel to ground)
+            chargeCore.visible = false; arcs.forEach((l) => (l.material.opacity = 0));
+            const fp = (tt - CHARGE_T) / FLY_T;
+            const smooth = fp * fp * (3 - 2 * fp);
+            const x = startX + smooth * (0 - startX);
+            arrow.visible = true; arrow.position.set(x, 1, 0);
+            flameParts.forEach((fm, i) => { fm.scale.setScalar(1 + Math.sin(tt * 30 + i) * 0.25); fm.material.emissiveIntensity = 1.2 + Math.sin(tt * 25 + i) * 0.6; }); // 🔥 flames flicker in flight
+            trail.visible = true; trail.position.set(x - 0.7, 1, 0); trail.material.opacity = 0.55 * (1 - fp * 0.3);
+            aLight.position.set(x, 1, 0); aLight.intensity = fxType === "arrowsnipe" ? 2.2 : 1.6;
+          } else {
+            arrow.visible = false; trail.visible = false;
+            const bp = Math.min(1, (tt - CHARGE_T - FLY_T) / (dur - CHARGE_T - FLY_T));
+            aLight.position.set(0, 1, 0); aLight.intensity = 2.2 * (1 - bp);
+            shards.forEach((m) => { m.visible = true; const r = bp * m.userData.sp; m.position.set(Math.cos(m.userData.a) * r, 1 + Math.sin(m.userData.a) * r, 0); m.material.opacity = 1 - bp; m.scale.setScalar(1 + bp * 0.5); });
+            // 🛡️💥 pierce: the shield appears then SHATTERS — fragments fly apart spinning
+            if (fxType === "arrowpierce") {
+              shieldBreak.visible = true;
+              shieldFrags.forEach((frag) => {
+                if (frag.userData.dx != null) {
+                  frag.position.x = frag.userData.dx * bp * 1.2;
+                  frag.position.y = frag.userData.dy * bp * 1.2 - bp * bp * 0.8; // fall as they scatter
+                  frag.rotation.z = frag.userData.spin * bp;
+                } else { frag.position.z = bp * 0.6; }
+                frag.material.opacity = 1 - bp;
+              });
+            }
+            // 🔥 snipe: flames burn on the monster
+            burnFlames.forEach((m) => {
+              m.material.opacity = Math.sin(Math.min(1, bp * 1.3) * Math.PI);
+              m.position.y += 0.008 * m.userData.up;
+              m.rotation.z = Math.sin(tt * 12 + m.userData.sway) * 0.25;
+              m.scale.y = 0.8 + Math.sin(tt * 15 + m.userData.sway) * 0.4;
+            });
+            // 🫧 poison: purple bubbles wobble up off the body
+            poisonPuffs.forEach((m) => { m.material.opacity = 0.85 * Math.sin(Math.min(1, bp * 1.2) * Math.PI); m.position.y += 0.012 * m.userData.vy; m.position.x += Math.sin(tt * 5 + m.userData.wob) * 0.004; });
+          }
+        };
+      } else if (fxType === "arrowmulti") {
+        // 🏹 three arrows fan in together and strike in a spread
+        const cc = color || 0x7ba05b;
+        const arrows = [];
+        for (let i = 0; i < 3; i++) {
+          const arrow = new THREE.Group();
+          const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.44, 6), new THREE.MeshStandardMaterial({ color: 0x8a6a3a }));
+          shaft.rotation.z = Math.PI / 2;
+          const head = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.14, 4), new THREE.MeshStandardMaterial({ color: cc, emissive: cc, emissiveIntensity: 0.9, metalness: 0.6 }));
+          head.rotation.z = -Math.PI / 2; head.position.x = 0.28;
+          arrow.add(shaft, head);
+          arrow.userData = { yoff: (i - 1) * 0.5, zoff: (i - 1) * 0.35 };
+          arrow.position.set(-2.6, 1 + arrow.userData.yoff, arrow.userData.zoff);
+          g.add(arrow); arrows.push(arrow);
+          const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.004, 1.1, 6), new THREE.MeshBasicMaterial({ color: cc, transparent: true, opacity: 0.45, depthWrite: false }));
+          tr.rotation.z = Math.PI / 2; arrow.userData.trail = tr; g.add(tr);
+        }
+        const bursts = [];
+        for (let i = 0; i < 12; i++) {
+          const m = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 6), new THREE.MeshBasicMaterial({ color: cc, transparent: true }));
+          m.visible = false; m.userData = { a: (i / 12) * Math.PI * 2, sp: 0.7 + Math.random() * 0.5 }; g.add(m); bursts.push(m);
+        }
+        const mLight = new THREE.PointLight(cc, 0, 3); g.add(mLight);
+        // 💫 dizzy stars that orbit the monster's head after the triple hit
+        const dizzyStars = [];
+        for (let i = 0; i < 4; i++) {
+          const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.09, 0), new THREE.MeshBasicMaterial({ color: 0xffe14d, transparent: true, opacity: 0 }));
+          star.scale.set(1, 0.55, 0.4);
+          star.userData = { a: (i / 4) * Math.PI * 2 };
+          g.add(star); dizzyStars.push(star);
+        }
+        g.renderOrder = 998;
+        arrows.forEach((a) => { a.visible = false; a.userData.trail.visible = false; });
+        const hitAt = 0.0; // the attack animation itself fires the 3 arrows; FX = impact + dizzy stars
+        dur = 1.3;
+        update = (pr) => {
+          if (pr < hitAt) {
+            const fp = pr / hitAt; const smooth = fp * fp * (3 - 2 * fp);
+            arrows.forEach((arrow) => {
+              const x = -2.6 + smooth * 2.6;
+              const conv = 1 - smooth; // arrows converge as they near the target
+              arrow.position.set(x, 1 + arrow.userData.yoff * conv, arrow.userData.zoff * conv);
+              arrow.visible = true;
+              arrow.userData.trail.visible = true;
+              arrow.userData.trail.position.set(x - 0.55, arrow.position.y, arrow.position.z);
+              arrow.userData.trail.material.opacity = 0.45 * (1 - fp * 0.3);
+            });
+            mLight.intensity = 1;
+          } else {
+            arrows.forEach((arrow) => { arrow.visible = false; arrow.userData.trail.visible = false; });
+            const bp = (pr - hitAt) / (1 - hitAt);
+            mLight.position.set(0, 1, 0); mLight.intensity = 2 * (1 - Math.min(1, bp * 2));
+            bursts.forEach((m) => { const b2 = Math.min(1, bp * 2.2); m.visible = true; const r = b2 * m.userData.sp; m.position.set(Math.cos(m.userData.a) * r, 1 + Math.sin(m.userData.a) * r, 0); m.material.opacity = 1 - b2; m.scale.setScalar(1 + b2 * 0.4); });
+            // 💫 stars spin around the monster's head (dizzy!)
+            dizzyStars.forEach((star) => {
+              const ang = star.userData.a + bp * 9;
+              star.position.set(Math.cos(ang) * 0.55, 1.75 + Math.sin(bp * 12 + star.userData.a) * 0.05, Math.sin(ang) * 0.55);
+              star.rotation.z = ang;
+              star.material.opacity = Math.sin(Math.min(1, bp * 1.15) * Math.PI);
+            });
+          }
+        };
+      } else if (fxType === "bleedstab") {
+        // 🩸 รัวมีดคู่ — crossing red slash marks + blood drops dripping down
+        const slashes = [];
+        for (let i = 0; i < 4; i++) {
+          const sl = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.09), new THREE.MeshBasicMaterial({ color: 0xff3a4a, transparent: true, opacity: 0, side: THREE.DoubleSide }));
+          sl.position.set(0, 0.9 + (i % 2) * 0.35, 0.02);
+          sl.rotation.z = (i % 2 ? -1 : 1) * (0.5 + i * 0.15);
+          sl.userData = { at: i * 0.12 };
+          g.add(sl); slashes.push(sl);
+        }
+        // dripping blood drops
+        const drops = [];
+        for (let i = 0; i < 9; i++) {
+          const m = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 6), new THREE.MeshStandardMaterial({ color: 0xc0182a, roughness: 0.3, transparent: true, opacity: 0 }));
+          m.scale.y = 1.4;
+          m.position.set((Math.random() - 0.5) * 0.8, 0.9 + Math.random() * 0.6, 0.05);
+          m.userData = { at: 0.3 + Math.random() * 0.3, vy: 0.8 + Math.random() * 0.8 };
+          g.add(m); drops.push(m);
+        }
+        const bLight = new THREE.PointLight(0xd9536b, 0, 3); bLight.position.y = 1; g.add(bLight);
+        g.renderOrder = 998;
+        dur = 0.9;
+        update = (pr) => {
+          slashes.forEach((sl) => {
+            const lp = Math.max(0, Math.min(1, (pr - sl.userData.at) / 0.4));
+            sl.material.opacity = Math.sin(lp * Math.PI) * 0.95;
+            sl.scale.x = 0.3 + lp * 0.7;
+          });
+          drops.forEach((m) => {
+            if (pr >= m.userData.at) {
+              const dp = (pr - m.userData.at) / (1 - m.userData.at);
+              m.material.opacity = 0.9 * (1 - dp * 0.6);
+              m.position.y -= 0.014 * m.userData.vy; // drip downward
+            }
+          });
+          bLight.intensity = 2 * Math.sin(pr * Math.PI);
+        };
+      } else if (fxType === "poisonknives") {
+        // ☠️ มีดอาบยาพิษ — 3 purple daggers fly in one after another + venom splash
+        const knives = [];
+        for (let i = 0; i < 3; i++) {
+          const kn = new THREE.Group();
+          const blade = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.3, 4), new THREE.MeshStandardMaterial({ color: 0x9a4ad0, emissive: 0x7a2ad0, emissiveIntensity: 1, metalness: 0.5 }));
+          blade.rotation.z = -Math.PI / 2;
+          const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.14, 6), new THREE.MeshStandardMaterial({ color: 0x2a2a34 }));
+          grip.rotation.z = Math.PI / 2; grip.position.x = -0.2;
+          kn.add(blade, grip);
+          kn.userData = { at: i * 0.18, yoff: (i - 1) * 0.3 };
+          kn.visible = false;
+          g.add(kn); knives.push(kn);
+        }
+        // venom splash droplets on impact
+        const venom = [];
+        for (let i = 0; i < 10; i++) {
+          const m = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), new THREE.MeshBasicMaterial({ color: 0xb06ae0, transparent: true, opacity: 0 }));
+          m.userData = { a: (i / 10) * Math.PI * 2, sp: 0.5 + Math.random() * 0.5, at: 0.18 + Math.floor(i / 4) * 0.18 };
+          g.add(m); venom.push(m);
+        }
+        const pLight = new THREE.PointLight(0x9a4ad0, 0, 3); pLight.position.y = 1; g.add(pLight);
+        g.renderOrder = 998;
+        dur = 1.0;
+        update = (pr) => {
+          knives.forEach((kn) => {
+            const lp = (pr - kn.userData.at) / 0.16;
+            if (lp >= 0 && lp < 1) {
+              kn.visible = true;
+              const sm = lp * lp * (3 - 2 * lp);
+              kn.position.set(-2.4 + sm * 2.4, 1 + kn.userData.yoff * (1 - sm), 0);
+              kn.rotation.z = lp * Math.PI * 2; // spinning throw
+            } else kn.visible = false;
+          });
+          venom.forEach((m) => {
+            const vp = (pr - m.userData.at) / 0.45;
+            if (vp >= 0 && vp < 1) {
+              const r = vp * m.userData.sp;
+              m.position.set(Math.cos(m.userData.a) * r, 1 + Math.sin(m.userData.a) * r - vp * vp * 0.4, 0);
+              m.material.opacity = 0.9 * (1 - vp);
+            } else m.material.opacity = 0;
+          });
+          pLight.intensity = pr > 0.15 ? 2 * Math.sin(Math.min(1, pr * 1.2) * Math.PI) : 0;
+        };
+      } else if (fxType === "shadowdance") {
+        // 💨 ระบำเงา — crisscross shadow slashes flickering left-right rapidly
+        const cuts = [];
+        for (let i = 0; i < 8; i++) {
+          const cut = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.07), new THREE.MeshBasicMaterial({ color: i % 2 ? 0x8affc0 : 0x3a3a4a, transparent: true, opacity: 0, side: THREE.DoubleSide }));
+          cut.position.set((Math.random() - 0.5) * 0.4, 0.7 + Math.random() * 0.8, 0.03);
+          cut.rotation.z = (i % 2 ? 1 : -1) * (0.4 + Math.random() * 0.5);
+          cut.userData = { at: i * 0.09 };
+          g.add(cut); cuts.push(cut);
+        }
+        // after-image silhouettes flickering at the sides
+        const ghosts = [];
+        for (const sx of [-0.9, 0.9]) {
+          const gh = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8), new THREE.MeshBasicMaterial({ color: 0x2a2a3a, transparent: true, opacity: 0 }));
+          gh.scale.set(1, 1.9, 0.7);
+          gh.position.set(sx, 0.9, -0.1); gh.userData = { ph: sx > 0 ? 0 : Math.PI };
+          g.add(gh); ghosts.push(gh);
+        }
+        const sdLight = new THREE.PointLight(0x8affc0, 0, 3); sdLight.position.y = 1; g.add(sdLight);
+        g.renderOrder = 998;
+        dur = 0.9;
+        update = (pr) => {
+          cuts.forEach((cut) => {
+            const lp = Math.max(0, Math.min(1, (pr - cut.userData.at) / 0.25));
+            cut.material.opacity = Math.sin(lp * Math.PI) * 0.9;
+            cut.scale.x = 0.4 + lp * 0.6;
+          });
+          ghosts.forEach((gh) => { gh.material.opacity = Math.max(0, Math.sin(pr * Math.PI * 10 + gh.userData.ph)) * 0.45 * (1 - pr); });
+          sdLight.intensity = 1.5 * Math.sin(pr * Math.PI);
+        };
+      } else {
+        // default: colored burst ring
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.08, 8, 20), new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.9, transparent: true }));
+        ring.rotation.x = Math.PI / 2; ring.position.y = 0.9; g.add(ring);
+        dur = 0.5;
+        update = (pr) => { ring.scale.setScalar(1 + pr * 2); ring.material.opacity = 1 - pr; };
+      }
+      activeFx.push({ group: g, t: 0, dur, update });
+    };
+    const updateSkillFx = (dt) => {
+      for (let i = activeFx.length - 1; i >= 0; i--) {
+        const f = activeFx[i];
+        f.t += dt;
+        const pr = Math.min(1, f.t / f.dur);
+        if (f.update) f.update(pr);
+        if (pr >= 1) { scene.remove(f.group); activeFx.splice(i, 1); }
+      }
+    };
+    // ✨ sword trail: sample the blade tip each frame and draw a fading ribbon
+    let dtGlobal = 0.016;
+    const _tipTop = new THREE.Vector3();
+    const _tipBot = new THREE.Vector3();
+    const updateSwordTrail = (active, color) => {
+      const st = G.swordTrail;
+      if (!st) return;
+      if (active) {
+        // tip (top) and a point lower on the blade (bottom) → gives the ribbon width
+        G.tipMarker.getWorldPosition(_tipTop);
+        // a point 0.5 below the tip along the blade
+        _tipBot.set(0, 0.78, 0); wand.localToWorld(_tipBot); // narrower ribbon (was 0.5 → 0.78)
+        st.history.unshift({ top: _tipTop.clone(), bot: _tipBot.clone() });
+        if (st.history.length > st.len) st.history.pop();
+        if (st.mat && color != null) st.mat.color.setHex(color);
+        st.mat.opacity = 0.5;
+        st.mesh.visible = st.history.length >= 2;
+      } else {
+        // fade out and clear when not swinging
+        if (st.mesh.visible) {
+          st.mat.opacity -= dtGlobal * 4;
+          if (st.mat.opacity <= 0) { st.mesh.visible = false; st.history.length = 0; }
+        }
+        if (st.history.length) st.history.pop();
+      }
+      // write the ribbon vertices from history
+      if (st.mesh.visible && st.history.length >= 2) {
+        for (let i = 0; i < st.len; i++) {
+          const h = st.history[Math.min(i, st.history.length - 1)];
+          st.pos[i * 6 + 0] = h.top.x; st.pos[i * 6 + 1] = h.top.y; st.pos[i * 6 + 2] = h.top.z;
+          st.pos[i * 6 + 3] = h.bot.x; st.pos[i * 6 + 4] = h.bot.y; st.pos[i * 6 + 5] = h.bot.z;
+        }
+        st.geo.attributes.position.needsUpdate = true;
+        st.geo.computeVertexNormals();
+      }
+    };
+
+    // ---------- Player / battle state ----------
+    G.player = { level: 1, exp: 0, maxHp: 40, hp: 40, mp: 50, maxMp: 50, atk: 8, def: 0, skillPts: 0, sp: 0, balls: 3, specials: 2 };
+    G.skillRanks = {}; // {skillId: rank 1..5}
+    G.ultRank = 1; // 🌟 ultimate rank 1..5
+    G.sellPriority = SLOTS.slice(); // 💰 auto-sell slot priority order
+    G.baseStats = { atk: 0, hp: 0, def: 0, crit: 0, luck: 0, mp: 0 }; // 💪 allocated base stats
+    G.player.statPts = 0; // stat points to spend (2 per level)
+    G.col = {};
+    G.pets = {}; // per species: { lv, exp, stage }
+    G.inv = []; // loot item ids (duplicates allowed)
+    G.equip = EMPTY_EQUIP();
+    G.plus = {}; // itemId -> enhancement level (+1..+5)
+    G.potions = 1; // 🧪 start with one
+    G.gold = 80; // 💰 currency for the shop
+    G.shop = []; // current shop stock (item ids)
+    G.bossSpawned = {}; // threshold -> true
+    G.buddy = null;
+    G.mode = "create"; // start at the character creator
+    G.banim = null; // {type,t,dur,...}
+    G.enemy = null; // {spId, hp, maxHp, atk, lv, boss, mesh}
+    let battleCenter = new THREE.Vector3();
+    G.restoreScenery = () => { if (G._hiddenScenery) { G._hiddenScenery.forEach((o) => (o.visible = true)); G._hiddenScenery = []; } };
+
+    // item stats scale +20% per enhancement level
+    const itemStats = (id) => {
+      const it = LOOT.find((x) => x.id === id);
+      if (!it) return { atk: 0, hp: 0, def: 0, spd: 0, eva: 0, crit: 0 };
+      const m = 1 + 0.2 * (G.plus[id] || 0);
+      return {
+        atk: Math.round((it.atk || 0) * m),
+        hp: Math.round((it.hp || 0) * m),
+        def: Math.round((it.def || 0) * m),
+        spd: Math.round((it.spd || 0) * m),
+        eva: Math.round((it.eva || 0) * m),
+        crit: Math.round((it.crit || 0) * m),
+      };
+    };
+    // equipment bonuses (all 7 slots)
+    const equipBonus = () => {
+      const b = { atk: 0, hp: 0, def: 0, spd: 0, eva: 0, crit: 0 };
+      let dragonN = 0;
+      SLOTS.forEach((s) => {
+        const st = itemStats(G.equip[s]);
+        b.atk += st.atk; b.hp += st.hp; b.def += st.def; b.spd += st.spd;
+        b.eva += st.eva; b.crit += st.crit;
+        const it = LOOT.find((x) => x.id === G.equip[s]);
+        if (it && it.rarity === "dragon") dragonN++;
+      });
+      // 🐉 dragon set bonus: 3 ชิ้น / 5 ชิ้น / ครบ 7 ชิ้น
+      if (dragonN >= 3) b.atk += 8;
+      if (dragonN >= 5) { b.def += 6; b.hp += 30; }
+      if (dragonN >= 7) { b.atk += 12; b.hp += 40; b.def += 6; b.spd += 10; b.crit += 10; b.eva += 5; }
+      return b;
+    };
+    // active buddy buffs the character — grows every pet level, jumps at evolution
+    // 🐾 pet team (up to 3) — all members contribute buffs; slot 0 walks with you
+    G.team = [];
+    const petBuffOne = (spId) => {
+      if (!spId || !G.pets[spId]) return { atk: 0, hp: 0, def: 0 };
+      const p = G.pets[spId];
+      const tier = SPECIES[spId].tier;
+      const skLv = (G.petSkillLv && G.petSkillLv[spId]) || 1; // 🎯 pet skill level boosts buffs
+      return {
+        atk: tier * 2 * p.stage + p.lv + (skLv - 1) * 2,
+        hp: 3 * p.lv + 5 * (p.stage - 1) + (skLv - 1) * 4,
+        def: (p.stage - 1) + Math.floor(p.lv / 2),
+      };
+    };
+    const petBuff = () => {
+      const team = (G.team && G.team.length) ? G.team : (G.buddy ? [G.buddy] : []);
+      return team.reduce((acc, id) => {
+        const b = petBuffOne(id);
+        return { atk: acc.atk + b.atk, hp: acc.hp + b.hp, def: acc.def + b.def };
+      }, { atk: 0, hp: 0, def: 0 });
+    };
+    // 💪 base-stat allocation: each rank adds a flat bonus
+    const bs = () => G.baseStats || { atk: 0, hp: 0, def: 0, crit: 0, luck: 0, mp: 0 };
+    const effAtk = () => G.player.atk + equipBonus().atk + petBuff().atk + bs().atk;
+    const effDef = () => G.player.def + equipBonus().def + petBuff().def + bs().def;
+    const effMaxHp = () => G.player.maxHp + equipBonus().hp + petBuff().hp + bs().hp * 6;
+    const effMaxMp = () => 30 + (G.player.level - 1) * 6 + (G.cls === "mage" ? 20 : 0) + bs().mp * 5; // 🔮 mage has more mana
+    const effSpd = () => 3.4 * (1 + equipBonus().spd / 100); // ⚡ shoes speed up walking
+    const effEva = () => equipBonus().eva; // 💨 % chance to dodge
+    const effCrit = () => equipBonus().crit + bs().crit * 0.5; // 🎯 % bonus crit (0.5%/point)
+    const effLuck = () => bs().luck; // 🍀 luck: catch % + gold %
+    const weaponElem = () => {
+      const it = LOOT.find((x) => x.id === G.equip.weapon);
+      return it && it.elem ? it.elem : null;
+    };
+
+    // switching buddies changes buffs → re-sync stats
+    {
+      const _setBuddy = G.setBuddy;
+      G.setBuddy = (id) => {
+        _setBuddy(id);
+        G.player.hp = Math.min(G.player.hp, effMaxHp());
+        syncPlayer();
+      };
+    }
+
+    const toast = (msg) => setUi((u) => ({ ...u, toast: msg, toastAt: Date.now() }));
+    const syncPlayer = () => setUi((u) => ({
+      ...u, hp: Math.ceil(G.player.hp), maxHp: effMaxHp(), level: G.player.level,
+      exp: G.player.exp, expNext: G.player.level * 50, balls: G.player.balls, specials: G.player.specials,
+      mp: Math.ceil(G.player.mp), maxMp: effMaxMp(),
+      atk: effAtk(), def: effDef(), skillPts: G.player.skillPts,
+      sp: G.player.sp || 0, skillRanks: { ...G.skillRanks }, skillCap: G.skillCap ? G.skillCap() : 1,
+      ultRank: G.ultRank || 1, ultSkillSum: G.skillSum ? G.skillSum() : 0, sellPriority: G.sellPriority ? [...G.sellPriority] : SLOTS.slice(),
+      statPts: G.player.statPts || 0, baseStats: { ...(G.baseStats || {}) },
+      col: { ...G.col }, pets: { ...G.pets },
+      team: [...(G.team || [])], petSp: G.petSp || 0, petSkillLv: { ...(G.petSkillLv || {}) },
+      playerName: G.playerName, playerTitle: G.playerTitle,
+      inv: [...G.inv], equip: { ...G.equip }, plus: { ...G.plus }, potions: G.potions, mpPotions: G.mpPotions || 0, gold: G.gold,
+    }));
+
+    // 🧪 potion: heals 40% of max HP — instant in explore, consumes your turn in battle
+    G.usePotion = () => {
+      if (G.potions <= 0) { toast("น้ำยาหมด! ชนะมอนสเตอร์เพื่อลุ้นดรอป 🧪"); return; }
+      if (G.player.hp >= effMaxHp()) { toast("เลือดเต็มอยู่แล้ว!"); return; }
+      if (G.mode === "battle" && (G.banim || !G.enemy)) return;
+      G.potions--;
+      const heal = Math.round(effMaxHp() * 0.4);
+      G.player.hp = Math.min(effMaxHp(), G.player.hp + heal);
+      burst(char.position, 0x8ae0a0, 1.2);
+      setMouth("laugh");
+      syncPlayer();
+      if (G.mode === "battle") {
+        setUi((u) => ({ ...u, msg: `🧪 ดื่มน้ำยาฟื้นฟู +${heal} HP!` }));
+        enemyTurn(); // healing uses your turn
+      } else {
+        toast(`🧪 ฟื้นฟู +${heal} HP!`);
+        setTimeout(() => setMouth("smile"), 800);
+      }
+    };
+
+    // 💧 mana potion: restores 50% max mana
+    G.mpPotions = 1;
+    G.useManaPotion = () => {
+      if (G.mpPotions <= 0) { toast("น้ำยามานาหมด! ลุ้นดรอปจากมอนสเตอร์ 💧"); return; }
+      if (G.player.mp >= effMaxMp()) { toast("มานาเต็มอยู่แล้ว!"); return; }
+      if (G.mode === "battle" && (G.banim || !G.enemy)) return;
+      G.mpPotions--;
+      const restore = Math.round(effMaxMp() * 0.5);
+      G.player.mp = Math.min(effMaxMp(), G.player.mp + restore);
+      burst(char.position, 0x6ac0f0, 1.2);
+      syncPlayer();
+      if (G.mode === "battle") {
+        setUi((u) => ({ ...u, msg: `💧 ดื่มน้ำยามานา +${restore} มานา!` }));
+        enemyTurn(); // uses your turn
+      } else {
+        toast(`💧 ฟื้นมานา +${restore}!`);
+      }
+    };
+
+    // ⚒️ enhance: consume 1 duplicate copy as material → +1 (up to +5)
+    // +1..+3 always succeed · +4 = 70% · +5 = 50% (fail = material lost, level kept)
+    G.enhance = (id) => {
+      const it = LOOT.find((x) => x.id === id);
+      if (!it) return;
+      const copies = G.inv.filter((x) => x === id).length;
+      const cur = G.plus[id] || 0;
+      const cap = Math.min(5, 1 + Math.floor(G.player.level / 2));
+      if (cur >= 5) { toast("ตีบวกเต็ม +5 แล้ว! ⭐"); return; }
+      if (cur >= cap) { toast(`⚒️ เพดานตีบวกตอนนี้คือ +${cap} — อัพเลเวลตัวละครเพื่อปลดล็อกต่อ!`); return; }
+      if (copies < 2) { toast("ต้องมีไอเทมชิ้นเดียวกันซ้ำอีก 1 ชิ้นเป็นวัตถุดิบ"); return; }
+      G.inv.splice(G.inv.indexOf(id), 1); // consume material
+      const rate = cur < 3 ? 1 : cur === 3 ? 0.7 : 0.5;
+      if (Math.random() < rate) {
+        G.plus[id] = cur + 1;
+        burst(char.position, 0x7ad0e8, 1.5);
+        toast(`⚒️ ตีบวกสำเร็จ! ${it.emoji} ${it.name} +${cur + 1} ✨`);
+        updateAura(); // glow grows with every +
+      } else {
+        toast(`💥 ตีบวกล้มเหลว... วัตถุดิบสลาย (ยังคง +${cur})`);
+      }
+      G.player.hp = Math.min(G.player.hp, effMaxHp());
+      syncPlayer();
+    };
+
+    // equip an item (tap in the bag panel)
+    G.equipItem = (id) => {
+      const it = LOOT.find((x) => x.id === id);
+      if (!it || !G.inv.includes(id)) return;
+      if (it.req && G.player.level < it.req) {
+        toast(`🔒 ต้องถึงเลเวล ${it.req} จึงจะสวม ${it.emoji} ${it.name} ได้`);
+        return;
+      }
+      const oldMax = effMaxHp();
+      G.equip[it.slot] = id;
+      const diff = effMaxHp() - oldMax;
+      if (diff > 0) G.player.hp += diff; // gain the bonus HP immediately
+      G.player.hp = Math.min(G.player.hp, effMaxHp());
+      if (it.slot === "weapon") G.setWeaponVisual(id);
+      else if (it.slot === "outfit") G.setOutfitVisual(id);
+      else applyGear(); // hat/mask/gloves/pants/shoes visuals
+      // ✨ dazzling burst for rare+ gear
+      const tier = TIER[it.rarity] || 1;
+      if (tier >= 3) burst(char.position, ELEM_GLOW[it.elem] || 0xffe28a, 1 + tier * 0.4);
+      toast(`สวมใส่ ${it.emoji} ${it.name}!`);
+      syncPlayer();
+    };
+
+    // 🎽 auto-equip: put on the strongest item in every slot
+    const itemPower = (id) => {
+      const st = itemStats(id);
+      const it = LOOT.find((x) => x.id === id);
+      return (TIER[it.rarity] || 1) * 100 + st.atk * 3 + st.hp + st.def * 2 + st.spd + st.crit + st.eva;
+    };
+    G.autoEquip = () => {
+      let changed = 0;
+      SLOTS.forEach((slot) => {
+        const owned = [...new Set(G.inv)].filter((id) => {
+          const it = LOOT.find((x) => x.id === id);
+          return it && it.slot === slot && (!it.req || G.player.level >= it.req); // respect level lock
+        });
+        if (!owned.length) return;
+        owned.sort((a, b) => itemPower(b) - itemPower(a));
+        const best = owned[0];
+        if (G.equip[slot] !== best) { G.equip[slot] = best; changed++; }
+      });
+      G.player.hp = Math.min(G.player.hp, effMaxHp());
+      G.setWeaponVisual(G.equip.weapon);
+      G.setOutfitVisual(G.equip.outfit);
+      applyGear();
+      toast(changed ? `🎽 สวมใส่ของแรงสุดครบ ${changed} ชิ้น!` : "🎽 สวมของดีที่สุดอยู่แล้ว");
+      syncPlayer();
+    };
+
+    // ⚒️ max enhancement is capped by character level (protects low levels)
+    const enhanceCap = () => Math.min(5, 1 + Math.floor(G.player.level / 2)); // Lv1→+1, Lv3→+2 ... Lv9→+5
+
+    // ⚒️ auto-enhance: pour duplicates into every item up to the level cap
+    G.autoEnhanceAll = () => {
+      const cap = enhanceCap();
+      let ups = 0, fails = 0;
+      [...new Set(G.inv)].forEach((id) => {
+        let copies = G.inv.filter((x) => x === id).length;
+        while (copies >= 2 && (G.plus[id] || 0) < cap) {
+          const cur = G.plus[id] || 0;
+          G.inv.splice(G.inv.indexOf(id), 1); // consume a duplicate
+          copies--;
+          const rate = cur < 3 ? 1 : cur === 3 ? 0.7 : 0.5;
+          if (Math.random() < rate) { G.plus[id] = cur + 1; ups++; }
+          else fails++;
+        }
+      });
+      updateAura();
+      G.player.hp = Math.min(G.player.hp, effMaxHp());
+      toast(ups || fails ? `⚒️ ตีบวกอัตโนมัติ: สำเร็จ ${ups} · พลาด ${fails} (เพดาน +${cap} ตามเลเวล)` : `⚒️ ยังไม่มีของซ้ำให้ตี (เพดาน +${cap})`);
+      syncPlayer();
+    };
+
+    // 💰 auto-sell surplus gear — keeps the best (and equipped) per slot, sells the rest.
+    // Processes the LOWEST tiers first, and follows the player's slot-priority order.
+    G.autoSell = () => {
+      // default priority = the order in ui.sellPriority, else SLOTS as-is
+      const priority = (G.sellPriority && G.sellPriority.length === SLOTS.length) ? G.sellPriority : SLOTS.slice();
+      let sold = 0, earned = 0;
+      // build a plan slot by slot in priority order
+      priority.forEach((slot) => {
+        // unique item ids owned in this slot, sorted STRONGEST first
+        const owned = [...new Set(G.inv)].filter((id) => {
+          const it = LOOT.find((x) => x.id === id);
+          return it && it.slot === slot && !it.starter;
+        }).sort((a, b) => itemPower(b) - itemPower(a));
+        // keep #1 (the best); for the rest, keep 1 duplicate for enhancing, sell surplus
+        owned.forEach((id, rank) => {
+          const it = LOOT.find((x) => x.id === id);
+          const isEquipped = G.equip[slot] === id;
+          let copies = G.inv.filter((x) => x === id).length;
+          // how many to keep: best item keeps 2 (for +enhance), others keep 0 unless equipped
+          const keep = rank === 0 ? Math.min(copies, 2) : (isEquipped ? 1 : 0);
+          let toSell = copies - keep;
+          while (toSell > 0) {
+            const i2 = G.inv.indexOf(id);
+            if (i2 < 0) break;
+            G.inv.splice(i2, 1);
+            earned += sellPrice(id); sold++; toSell--;
+          }
+        });
+      });
+      // if we sold an equipped-but-now-gone item, unequip it
+      SLOTS.forEach((slot) => { if (G.equip[slot] && !G.inv.includes(G.equip[slot])) {
+        G.equip[slot] = null;
+        if (slot === "weapon") G.setWeaponVisual(null);
+        else if (slot === "outfit") G.setOutfitVisual(null);
+      }});
+      G.gold += earned;
+      applyGear();
+      G.player.hp = Math.min(G.player.hp, effMaxHp());
+      toast(sold ? `💰 ขายอัตโนมัติ ${sold} ชิ้น ได้ ${earned} ทอง (เก็บของดีสุด+ของซ้ำไว้ตีบวก)` : "💰 ไม่มีของเกินให้ขาย");
+      syncPlayer();
+    };
+    // reorder a slot in the sell/keep priority (move up/down)
+    G.moveSellPriority = (slot, dir) => {
+      const arr = (G.sellPriority && G.sellPriority.length === SLOTS.length) ? G.sellPriority.slice() : SLOTS.slice();
+      const i = arr.indexOf(slot);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= arr.length) return;
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+      G.sellPriority = arr;
+      setUi((u) => ({ ...u, sellPriority: arr }));
+    };
+    G.enhanceCap = enhanceCap;
+
+    // loot drop on victory
+    const dropLoot = (boss) => {
+      // 🧪 potion roll (independent): 25% normal, boss always drops one
+      if (boss || Math.random() < 0.25) {
+        G.potions++;
+        toast("🧪 ดรอปน้ำยาเพิ่มเลือด!");
+      }
+      if (!boss && Math.random() > 0.55) { syncPlayer(); return null; } // 55% gear drop (ง่ายขึ้น 20%), boss = always
+      const rar = rollRarity(boss);
+      const pool = LOOT.filter((x) =>
+        x.rarity === rar && !x.starter && (x.slot !== "weapon" || !x.cls || x.cls === G.cls)
+      );
+      const it = pool[Math.floor(Math.random() * pool.length)];
+      G.inv.push(it.id);
+      questProgress && questProgress("collect", 1); // 📜
+      if (rar === "dragon") { toast(`🐉🔥 DRAGON DROP!!! ${it.name} 🔥🐉`); G.achStats.dragon = (G.achStats.dragon || 0) + 1; }
+      if (G.checkAchievements) G.checkAchievements();
+      else if (rar === "secret") toast(`🌟 SECRET DROP!! ${it.emoji} ${it.name} 🌟`);
+      else toast(`🎁 ดรอป ${it.emoji} ${it.name} (${RARITY[rar].name})`);
+      syncPlayer();
+      return it;
+    };
+
+    // ---------- Boss spawning at level 10, 15, 20, ... ----------
+    const spawnBoss = (th) => {
+      const spId = ["plerng", "mekha", "kirara"][Math.floor(Math.random() * 3)];
+      const m = buildMonster(spId, 2);
+      m.scale.multiplyScalar(1.9);
+      m.userData.lv = th;
+      m.userData.boss = true;
+      // menacing red aura ring
+      const aura = new THREE.Mesh(
+        new THREE.RingGeometry(0.55, 0.72, 28),
+        new THREE.MeshBasicMaterial({ color: 0xd93333, transparent: true, opacity: 0.6, side: THREE.DoubleSide })
+      );
+      aura.rotation.x = -Math.PI / 2;
+      aura.position.y = 0.02;
+      m.add(aura);
+      const a = Math.random() * Math.PI * 2;
+      m.position.set(Math.cos(a) * (FIELD_R - 1.5), 0, Math.sin(a) * (FIELD_R - 1.5));
+      m.userData.wander = { cx: m.position.x, cz: m.position.z, ph: Math.random() * 6, r: 1.2, sp: 0.2 };
+      scene.add(m);
+      wilds.push(m);
+      toast(`👑 บอส Lv.${th} ปรากฏตัวในทุ่งหญ้า!! ระวังวงแหวนสีแดง`);
+    };
+    const checkBoss = () => {
+      for (let th = 10; th <= G.player.level; th += BOSS_LEVELS_STEP) {
+        if (!G.bossSpawned[th]) {
+          G.bossSpawned[th] = true;
+          spawnBoss(th);
+          break; // one at a time
+        }
+      }
+    };
+
+    const gainExp = (amt) => {
+      G.player.exp += amt;
+      toast(`+${amt} EXP`);
+      let leveled = false;
+      while (G.player.exp >= G.player.level * 50) {
+        G.player.exp -= G.player.level * 50;
+        G.player.level++;
+        // (ระบบอัพซ้ายมือเดิมถูกแทนด้วยค่าสถานะ 6 อย่าง)
+        G.player.sp += 3; // 🎯 3 skill points per level (harder to max out)
+        G.player.statPts = (G.player.statPts || 0) + 3; // 💪 3 stat points per level (แทนระบบอัพเดิม)
+        G.player.hp = effMaxHp();
+        G.player.maxMp = effMaxMp();
+        G.player.mp = G.player.maxMp; // 💧 full mana on level up
+        G.player.balls++;
+        G.player.specials++;
+        if (G.checkAchievements) G.checkAchievements();
+        if (G.computeTitle) G.computeTitle();
+        leveled = true;
+      }
+      if (leveled) {
+        toast(`🎉 เลเวลอัพ! Lv.${G.player.level} — ได้แต้มสกิล เลือกอัพเกรดเลย!`);
+        if (G.sfx) G.sfx.levelup();
+        checkBoss();
+      }
+      syncPlayer();
+    };
+
+    // spend a skill point (called from the level-up panel)
+    // 🎯 spend skill points to rank up a class skill (max Lv.20, costs 1 point per rank)
+    // 🔒 max skill rank you can reach depends on character level
+    const SKILL_MAX = 20;
+    const skillCap = () => Math.max(1, Math.min(SKILL_MAX, G.player.level)); // rank a skill up to your character level
+    G.skillCap = skillCap;
+    // 💰 SP cost rises as the skill gets stronger: 1 (Lv1-5), 2 (Lv6-10), 3 (Lv11-15), 4 (Lv16-19)
+    const skillCost = (rank) => rank < 5 ? 1 : rank < 10 ? 2 : rank < 15 ? 3 : 4;
+    G.skillCost = skillCost;
+    G.rankSkill = (skillId) => {
+      const cur = G.skillRanks[skillId] || 1;
+      if (cur >= SKILL_MAX) { toast(`สกิลนี้เต็ม Lv.${SKILL_MAX} แล้ว! ⭐`); return; }
+      const cap = skillCap();
+      if (cur >= cap) { toast(`🔒 เพดานสกิลตอนนี้คือ Lv.${cap} — อัพเลเวลตัวละครเพื่อปลดล็อกต่อ!`); return; }
+      const cost = skillCost(cur);
+      if ((G.player.sp || 0) < cost) { toast(`ต้องใช้ ${cost} แต้มสกิล (มี ${G.player.sp || 0}) — เลเวลอัพเพื่อรับเพิ่ม`); return; }
+      G.player.sp -= cost;
+      G.skillRanks[skillId] = cur + 1;
+      const sk = CLASS_SKILLS[G.cls].find((s) => s.id === skillId);
+      if (G.sfx) G.sfx.levelup();
+      toast(`⬆️ ${sk.emoji} ${sk.name} → Lv.${cur + 1}! (−${cost}⚡)`);
+      syncPlayer();
+    };
+    // 🌟 ULTIMATE ranking — gated behind character level + your 4 skills being trained
+    const ULT_MAX = 5;
+    // requirements to unlock each ult rank: character level & total skill ranks invested
+    const ultReq = (rank) => ({ lv: 5 + rank * 5, skillSum: 8 + rank * 8 }); // rank1 needs Lv10 & 16 skill ranks, etc.
+    G.ultReq = ultReq;
+    G.skillSum = () => (CLASS_SKILLS[G.cls] || []).reduce((a, s) => a + (G.skillRanks[s.id] || 1), 0);
+    G.rankUlt = () => {
+      const cur = G.ultRank || 1;
+      if (cur >= ULT_MAX) { toast(`ท่าไม้ตายสุดยอดแล้ว! Lv.${ULT_MAX} ⭐`); return; }
+      const req = ultReq(cur);
+      if (G.player.level < req.lv) { toast(`🔒 ต้องเลเวล ${req.lv} ขึ้นไป (ตอนนี้ ${G.player.level})`); return; }
+      if (G.skillSum() < req.skillSum) { toast(`🔒 ต้องฝึก 4 สกิลรวม ${req.skillSum} ระดับก่อน (ตอนนี้ ${G.skillSum()})`); return; }
+      const cost = 3 + cur; // expensive: 4,5,6,7 SP
+      if ((G.player.sp || 0) < cost) { toast(`ท่าไม้ตายใช้ ${cost} แต้มสกิล (มี ${G.player.sp || 0})`); return; }
+      G.player.sp -= cost;
+      G.ultRank = cur + 1;
+      if (G.sfx) G.sfx.levelup();
+      toast(`🌟 ${ULTS[G.cls].name} → Lv.${cur + 1}! ท่าไม้ตายแรงขึ้น! (−${cost}⚡)`);
+      syncPlayer();
+    };
+
+    // ---------- 💪 Base-stat allocation ----------
+    // Each point: ⚔️atk+1 · ❤️hp+6 · 🛡️def+1 · 🎯crit+0.5% · 🍀luck+1(จับ+1%/ทอง+2%) · 💧mp+5
+    const STAT_INFO = {
+      atk:  { name: "โจมตี", emoji: "⚔️", per: "+1 พลังโจมตี" },
+      hp:   { name: "เลือด", emoji: "❤️", per: "+6 HP สูงสุด" },
+      def:  { name: "เกราะ", emoji: "🛡️", per: "+1 ป้องกัน" },
+      crit: { name: "คริ",   emoji: "🎯", per: "+0.5% คริติคอล" },
+      luck: { name: "โชค",  emoji: "🍀", per: "+1% จับ · +2% ทอง" },
+      mp:   { name: "มานา", emoji: "💧", per: "+5 มานาสูงสุด" },
+    };
+    G.STAT_INFO = STAT_INFO;
+    const STAT_MAX = 50;
+    // ⚖️ scaling cost: 1 pt (rank 0-9), 2 (10-19), 3 (20-29), 4 (30+) — deep investment costs more
+    const statCost = (rank) => 1 + Math.floor(rank / 10);
+    G.statCost = statCost;
+    G.allocStat = (stat) => {
+      const cur = (G.baseStats && G.baseStats[stat]) || 0;
+      if (cur >= STAT_MAX) { toast(`${STAT_INFO[stat].emoji} ${STAT_INFO[stat].name} เต็ม ${STAT_MAX} แล้ว!`); return; }
+      const cost = statCost(cur);
+      if ((G.player.statPts || 0) < cost) { toast(`ต้องใช้ ${cost} แต้มสถานะ (มี ${G.player.statPts || 0}) — เลเวลอัพรับ +2`); return; }
+      G.player.statPts -= cost;
+      G.baseStats[stat] = cur + 1;
+      if (G.sfx) G.sfx.levelup();
+      G.player.hp = Math.min(G.player.hp, effMaxHp());
+      toast(`${STAT_INFO[stat].emoji} ${STAT_INFO[stat].name} → ${cur + 1} (${STAT_INFO[stat].per})`);
+      syncPlayer();
+    };
+    // 🎯 recommended allocation weights per class
+    const STAT_RECO = {
+      warrior:  { atk: 3, hp: 3, def: 3, crit: 1, luck: 1, mp: 1, desc: "สายถึก: เลือด+เกราะ+โจมตี" },
+      archer:   { atk: 4, crit: 3, hp: 2, luck: 2, def: 1, mp: 1, desc: "สายคริ: โจมตี+คริ+โชค" },
+      mage:     { mp: 3, atk: 3, hp: 2, def: 1, crit: 1, luck: 1, desc: "สายเวท: มานา+โจมตี" },
+      assassin: { crit: 4, atk: 3, luck: 2, hp: 1, def: 1, mp: 1, desc: "สายคริ: คริสูงสุด+โชค" },
+      lancer:   { atk: 4, def: 3, hp: 2, crit: 1, luck: 1, mp: 1, desc: "สายทะลวง: โจมตี+เกราะ" },
+      samurai:  { atk: 4, crit: 3, hp: 2, def: 1, luck: 1, mp: 1, desc: "สายดาบ: โจมตี+คริ" },
+    };
+    G.STAT_RECO = STAT_RECO;
+    // 🎯 auto-allocate all available points following the class recommendation
+    G.autoAllocStats = () => {
+      const reco = STAT_RECO[G.cls] || STAT_RECO.warrior;
+      const keys = Object.keys(STAT_INFO);
+      let spent = 0, guard = 0;
+      while (guard++ < 500) {
+        // pick the stat furthest below its recommended share (weighted round-robin)
+        let best = null, bestGap = -1;
+        for (const k of keys) {
+          const cur = G.baseStats[k] || 0;
+          if (cur >= STAT_MAX) continue;
+          const cost = statCost(cur);
+          if ((G.player.statPts || 0) < cost) continue;
+          const gap = reco[k] / Math.max(1, cur + 1); // desire = weight / (rank+1)
+          if (gap > bestGap) { bestGap = gap; best = k; }
+        }
+        if (!best) break;
+        G.player.statPts -= statCost(G.baseStats[best] || 0);
+        G.baseStats[best] = (G.baseStats[best] || 0) + 1;
+        spent++;
+      }
+      if (spent) {
+        if (G.sfx) G.sfx.levelup();
+        G.player.hp = Math.min(G.player.hp, effMaxHp());
+        toast(`🎯 อัพตามแนะนำ ${spent} ระดับ! (${reco.desc})`);
+      } else toast("ไม่มีแต้มพอสำหรับอัพ — เลเวลอัพรับ +2 แต้ม");
+      syncPlayer();
+    };
+
+    // ---------- 🏪 Shop: buy & sell with gold ----------
+    const SELL_BASE = { common: 15, rare: 40, epic: 100, secret: 300, dragon: 800 };
+    const sellPrice = (id) => {
+      const it = LOOT.find((x) => x.id === id);
+      if (!it) return 0;
+      return Math.round(SELL_BASE[it.rarity] * (1 + 0.25 * (G.plus[id] || 0)));
+    };
+    G.sellPrice = sellPrice;
+    const rollShopItem = () => {
+      const r = Math.random();
+      const rar = r < 0.05 ? "secret" : r < 0.3 ? "epic" : r < 0.65 ? "rare" : "common";
+      const pool = LOOT.filter((x) =>
+        x.rarity === rar && !x.starter && (x.slot !== "weapon" || !x.cls || x.cls === G.cls)
+      );
+      return pool[Math.floor(Math.random() * pool.length)].id;
+    };
+    G.refreshShop = (free) => {
+      if (!free) {
+        if (G.gold < 30) { toast("ทองไม่พอ! สุ่มสินค้าใหม่ใช้ 30💰"); return; }
+        G.gold -= 30;
+      }
+      G.shop = [rollShopItem(), rollShopItem(), rollShopItem(), rollShopItem()];
+      setUi((u) => ({ ...u, shop: [...G.shop], gold: G.gold }));
+    };
+    G.buyItem = (id, slotIdx) => {
+      const it = LOOT.find((x) => x.id === id);
+      const price = sellPrice(id) * 3;
+      if (G.gold < price) { toast(`ทองไม่พอ! ต้องมี ${price}💰`); return; }
+      G.gold -= price;
+      G.inv.push(id);
+      G.shop.splice(slotIdx, 1);
+      toast(`🛍️ ซื้อ ${it.emoji} ${it.name} แล้ว!`);
+      setUi((u) => ({ ...u, shop: [...G.shop] }));
+      syncPlayer();
+    };
+    // 🧪💧 buy consumables from the shop
+    G.buyPotion = () => {
+      const price = 40;
+      if (G.gold < price) { toast(`ทองไม่พอ! ต้องมี ${price}💰`); return; }
+      G.gold -= price;
+      G.potions++;
+      if (G.sfx) G.sfx.coin();
+      toast("🧪 ซื้อน้ำยาเลือด +1!");
+      syncPlayer();
+    };
+    G.buyManaPotion = () => {
+      const price = 40;
+      if (G.gold < price) { toast(`ทองไม่พอ! ต้องมี ${price}💰`); return; }
+      G.gold -= price;
+      G.mpPotions = (G.mpPotions || 0) + 1;
+      if (G.sfx) G.sfx.coin();
+      toast("💧 ซื้อน้ำยามานา +1!");
+      syncPlayer();
+    };
+    G.sellItem = (id) => {
+      const idx = G.inv.indexOf(id);
+      if (idx < 0) return;
+      const it = LOOT.find((x) => x.id === id);
+      if (it.starter) { toast("อาวุธฝึกหัดขายไม่ได้นะ!"); return; }
+      const price = sellPrice(id);
+      G.inv.splice(idx, 1);
+      G.gold += price;
+      // unequip if that was the last copy
+      if (G.equip[it.slot] === id && !G.inv.includes(id)) {
+        G.equip[it.slot] = null;
+        if (it.slot === "weapon") G.setWeaponVisual(null);
+        else if (it.slot === "outfit") G.setOutfitVisual(null);
+        else applyGear();
+        G.player.hp = Math.min(G.player.hp, effMaxHp());
+      }
+      toast(`💰 ขาย ${it.emoji} ${it.name} ได้ ${price} ทอง`);
+      syncPlayer();
+    };
+
+    // pet EXP / level — every level buffs Cherry, evolves every 3 levels!
+    const petGain = (id, amt) => {
+      const p = G.pets[id];
+      if (!p) return;
+      p.exp += amt;
+      while (p.exp >= p.lv * 30) {
+        p.exp -= p.lv * 30;
+        p.lv++;
+        toast(`🐾 ${SPECIES[id].name} เลเวลอัพ! Lv.${p.lv} — บัฟให้เชอร์รี่แรงขึ้น!`);
+        if (p.lv % 3 === 0 && p.stage < 3) {
+          p.stage++;
+          const newName = p.stage >= 3 ? `อัลติเมท${EVOLVED[id]} 🌟` : `${EVOLVED[id]} 👑`;
+          toast(`✨ วิวัฒนาการร่างที่ ${p.stage}! → ${newName}`);
+          burst(char.position, 0xf5d05a, 1.4);
+          G.petSp = (G.petSp || 0) + 1; // 🎯 pet skill point on evolution
+          if (G.buddy === id) G.setBuddy(id); // rebuild follower with new form
+        }
+      }
+      syncPlayer(); // pet buffs affect character stats
+    };
+
+    const startBattle = (wild) => {
+      G.mode = "battle";
+      G.joy = { x: 0, y: 0 };
+      const sp = SPECIES[wild.userData.spId];
+      const lv = wild.userData.lv || 1;
+      const boss = !!wild.userData.boss;
+      const scale = (1 + (lv - 1) * 0.20) * (boss ? 2.0 : 1.35); // ⚖️ rebalanced: smoother curve, fairer bosses
+      const ghost = !!wild.userData.ghost;
+      const golden = !!wild.userData.golden;
+      const shiny = !!wild.userData.shiny;
+      const ngMul = (1 + (G.ngPlus || 0) * 0.4) * (shiny ? 1.3 : 1); // 🔄 NG+ + ✨ shiny tougher
+      G.enemy = {
+        spId: wild.userData.spId,
+        hp: Math.round(sp.hp * scale * (ghost ? 1.8 : 1) * ngMul),
+        maxHp: Math.round(sp.hp * scale * (ghost ? 1.8 : 1) * ngMul),
+        atk: Math.round(sp.atk * (1 + (lv - 1) * 0.18) * (boss ? 1.6 : ghost ? 1.4 : 1) * ngMul),
+        lv, boss, ghost, golden,
+        enraged: false, rageAura: null, shiny,
+        name: sp.name, biomeBoss: wild.userData.biomeBoss || null,
+        horde: !!wild.userData.horde,
+        dungeon: !!wild.userData.dungeon,
+        // 🎲 defensive-skill chances (bosses & ghosts are craftier)
+        evaChance: boss ? 0.2 : ghost ? 0.16 : golden ? 0.05 : 0.1,
+        blockChance: boss ? 0.22 : ghost ? 0.16 : 0.12,
+        guardChance: boss ? 0.28 : 0.18,
+        mesh: wild,
+      };
+      // remove from wild list (battle owns it now)
+      const idx = wilds.indexOf(wild);
+      if (idx >= 0) wilds.splice(idx, 1);
+      if (wild.userData.lbl) wild.userData.lbl.sprite.visible = false; // hide floating tag in battle
+      // status effects & battle buffs
+      G.est = { burn: 0, frozen: false, poison: 0, bleed: 0 };
+      G.battleEva = 0;
+      G.battleDef = 0;
+      G.ultUsed = false; // 🌟 one ultimate per battle
+      bZoom = 1; // reset battle zoom framing
+      // stage positions
+      battleCenter.set(char.position.x, 0, char.position.z);
+      G.enemyX = boss ? 2.0 : 1.3; // bosses stand further back (they're huge!)
+      // 🌳 hide any trees/bushes near the battle stage so they don't block the fighters
+      G._hiddenScenery = [];
+      for (const obj of sceneryObjects) {
+        const dx = obj.position.x - battleCenter.x, dz = obj.position.z - battleCenter.z;
+        if (Math.hypot(dx, dz) < 4.5 && obj.visible) { obj.visible = false; G._hiddenScenery.push(obj); }
+      }
+      char.position.set(battleCenter.x - 1.3, 0, battleCenter.z);
+      char.rotation.y = Math.PI / 2; // face +x
+      char.rotation.z = 0;
+      torso.rotation.z = 0;
+      legL.rotation.x = 0;
+      legR.rotation.x = 0;
+      armL.rotation.x = G.cls === "mage" ? -1.35 : (G.cls === "archer" ? -1.4 : 0);
+      armR.rotation.x = G.cls === "archer" ? -1.4 : 0; // 🏹 archer holds bow forward
+      if (G.vel) { G.vel.x = 0; G.vel.z = 0; }
+      wild.position.set(battleCenter.x + G.enemyX, 0, battleCenter.z);
+      wild.rotation.y = -Math.PI / 2; // face -x
+      // buddy joins the fight beside Cherry
+      if (buddyMesh) {
+        buddyMesh.position.set(battleCenter.x - 2.2, 0, battleCenter.z + 0.7);
+        buddyMesh.rotation.y = Math.PI / 2;
+      }
+      setMouth("smile");
+      setUi((u) => ({
+        ...u, mode: "battle", bstate: "choose", ultUsed: false,
+        enemy: { name: sp.name, emoji: sp.emoji, hp: G.enemy.hp, maxHp: G.enemy.maxHp, lv, boss, desc: sp.desc, spId: G.enemy.spId, shiny },
+        msg: ghost ? `👻 ผีราตรี Lv.${lv} ลอยเข้าหา... หนาวเยือกไปทั้งตัว!!`
+          : golden ? `🌟 จับมอนสเตอร์ทองให้ได้!! (จับติดง่ายมาก)`
+          : G.dungeon ? `🗼 ชั้น ${G.dungeon.floor}/10 — ${sp.emoji} ${sp.name} Lv.${lv}!`
+          : boss ? `👑 บอส${EVOLVED[wild.userData.spId]} Lv.${lv} ขวางทาง!!`
+          : `${sp.emoji} ${sp.name}ป่า Lv.${lv} ปรากฏตัว!`,
+      }));
+      syncPlayer();
+    };
+
+    const endBattle = (keepEnemyMesh) => {
+      if (!keepEnemyMesh && G.enemy) scene.remove(G.enemy.mesh);
+      else if (G.enemy) {
+        const mm2 = G.enemy.mesh;
+        if (mm2.userData.dungeon || mm2.userData.golden) {
+          // dungeon foes vanish; golden monsters escape when you flee
+          scene.remove(mm2);
+          if (mm2.userData.golden) toast("💨 มอนสเตอร์ทองฉวยโอกาสหนีไป!");
+          if (mm2.userData.ghost) ghostMesh = null;
+          if (G.dungeon) {
+            G.dungeon = null;
+            setUi((u) => ({ ...u, dungeonFloor: 0 }));
+            toast("🗼 ออกจากหอคอยมิติแล้ว");
+          }
+        } else {
+          // enemy stays in the world, walks away
+          mm2.userData.wander = {
+            cx: mm2.position.x, cz: mm2.position.z,
+            ph: Math.random() * 6, r: 1.5, sp: mm2.userData.ghost ? 0.35 : 0.5,
+          };
+          mm2.userData.shy = 3; // can't be re-encountered briefly
+          if (mm2.userData.lbl) mm2.userData.lbl.sprite.visible = true;
+          wilds.push(mm2);
+        }
+      }
+      G.enemy = null;
+      G.banim = null;
+      if (G.restoreScenery) G.restoreScenery();
+      G.mode = "explore";
+      setMouth("smile");
+      setUi((u) => ({ ...u, mode: "explore", enemy: null, msg: "" }));
+      setTimeout(() => saveGame(), 50); // 💾 save after every battle
+    };
+
+    // shared victory routine (used by attacks, pet strikes, and burn ticks)
+    // 🎲 enemy defensive skills: returns { dmg, note } after a random dodge/block/guard roll
+    const enemyDefend = (raw) => {
+      const e = G.enemy;
+      if (!e) return { dmg: raw, note: "" };
+      const r = Math.random();
+      if (r < e.evaChance) {
+        // 💨 full dodge — sidestep, no damage
+        if (e.mesh) {
+          e.mesh.position.z = battleCenter.z - 0.5;
+          setTimeout(() => { if (e.mesh) e.mesh.position.z = battleCenter.z; }, 200);
+        }
+        return { dmg: 0, note: " — ศัตรูหลบได้! 💨" };
+      }
+      if (r < e.evaChance + e.blockChance) {
+        // 🛡️ block — absorbs ~70%
+        return { dmg: Math.max(1, Math.round(raw * 0.3)), note: " — ศัตรูบล็อก! 🛡️" };
+      }
+      if (r < e.evaChance + e.blockChance + e.guardChance) {
+        // 🪨 guard — reduces ~40%
+        return { dmg: Math.max(1, Math.round(raw * 0.6)), note: " — ศัตรูตั้งการ์ด! 🪨" };
+      }
+      return { dmg: raw, note: "" };
+    };
+
+    const winBattle = () => {
+      if (!G.enemy) return;
+      const em = G.enemy.mesh;
+      const sp = SPECIES[G.enemy.spId];
+      const wasBoss = G.enemy.boss;
+      burst(em.position, 0xf5d05a);
+      setMouth("laugh");
+      G.player.balls += wasBoss ? 3 : 1;
+      setUi((u) => ({
+        ...u,
+        msg: wasBoss
+          ? `🏆 ปราบบอส Lv.${G.enemy.lv} สำเร็จ!! ได้บอลหัวใจ +3 💗`
+          : `ชนะ! ${sp.name} Lv.${G.enemy.lv} วิ่งหนีไป · ได้บอลหัวใจ +1 💗`,
+      }));
+      const isGhost = G.enemy.ghost;
+      const isGolden = G.enemy.golden;
+      questProgress("win", 1); // 📜 quest tracking
+      G.achStats.wins = (G.achStats.wins || 0) + 1;
+      if (wasBoss) { questProgress("boss", 1); G.achStats.bosses = (G.achStats.bosses || 0) + 1; }
+      // 🏰 biome boss extra reward (first time)
+      if (G.enemy.biomeBoss) {
+        const bid = G.enemy.biomeBoss;
+        if (!G.biomeBossDefeated[bid]) {
+          G.biomeBossDefeated[bid] = true;
+          G.gold += 500;
+          const dPool = LOOT.filter((x) => x.rarity === "epic" || x.rarity === "dragon");
+          if (dPool.length) { const dIt = dPool[Math.floor(Math.random() * dPool.length)]; G.inv.push(dIt.id); toast(`🏰 พิชิตเจ้าถิ่น! +500💰 + ${dIt.name}!`); }
+        } else { G.gold += 200; toast("🏰 ปราบเจ้าถิ่นซ้ำ +200💰"); }
+      }
+      checkAchievements();
+      // ⚔️ combo streak: +1 per win; bonus if you never got hit this fight
+      G.combo = (G.combo || 0) + 1;
+      const comboMult = 1 + Math.min(2, (G.combo - 1) * 0.15); // up to ×3 at combo 14+
+      const ngRew = 1 + (G.ngPlus || 0) * 0.5; // 🔄 NG+ richer rewards
+      if (G.combo >= 3) toast(`🔥 คอมโบ ×${G.combo}! โบนัส +${Math.round((comboMult - 1) * 100)}%`);
+      let goldGain = Math.round((8 + G.enemy.lv * 2) * (wasBoss ? 5 : isGhost ? 3 : 1) * comboMult * ngRew * (1 + effLuck() * 0.02)); // 🍀 luck finds more gold
+      if (G.enemy.horde) goldGain = Math.round(goldGain * 1.5); // ⚔️ horde bounty
+      if (isGolden) goldGain += 100; // 🌟 golden jackpot
+      if (G.enemy.shiny) { goldGain += 150; toast("✨ โบนัสมอนสเตอร์ประกาย! +150💰"); } // ✨ shiny bonus
+      G.gold += goldGain;
+      toast(`💰 +${goldGain} ทอง`);
+      gainExp(Math.round((20 + sp.tier * 10 + G.enemy.lv * 3) * (wasBoss ? 3 : isGhost ? 2 : 1) * comboMult * ngRew));
+      setUi((u) => ({ ...u, combo: G.combo }));
+      if (G.buddy) petGain(G.buddy, wasBoss || isGhost ? 40 : 15);
+      dropLoot(wasBoss || isGhost || isGolden); // 🎁 boss/ghost/golden = guaranteed big loot
+      if (em.userData.ghost) ghostMesh = null;
+      scene.remove(em);
+      G.banim = { type: "wait", t: 0, dur: 1.2 };
+      // 🗼 dungeon: chain to the next floor instead of leaving battle
+      if (G.dungeon) {
+        const fl = G.dungeon.floor;
+        const dGold = 15 * fl;
+        G.gold += dGold;
+        // 💾 remember the deepest floor we've cleared → resume at next
+        G.dungeonProgress = Math.max(G.dungeonProgress || 1, fl + 1);
+        questProgress("floor", 1); // 📜
+        G.achStats.floor = Math.max(G.achStats.floor || 0, fl);
+        checkAchievements();
+        const bossCleared = fl % 10 === 0;
+        toast(bossCleared ? `👑 ปราบบอสชั้น ${fl}! โบนัส +${dGold}💰` : `🗼 ผ่านชั้น ${fl}! +${dGold}💰`);
+        // boss floors drop bonus loot
+        if (bossCleared) {
+          G.gold += fl * 5;
+          const dragonChance = 0.05 + fl / 1000; // deeper = better
+          if (Math.random() < dragonChance) {
+            const dPool = LOOT.filter((x) => x.rarity === "dragon" && (!x.cls || x.cls === G.cls));
+            if (dPool.length) { const dIt = dPool[Math.floor(Math.random() * dPool.length)]; G.inv.push(dIt.id); toast(`🐉 รางวัลบอส: ${dIt.name}!!!`); }
+          }
+        }
+        syncPlayer();
+        setTimeout(() => {
+          if (!G.dungeon || G.mode !== "battle") return;
+          if (fl >= DUNGEON_MAX) {
+            // 🏆 conquered all 100 floors!
+            G.gold += 3000;
+            const dPool = LOOT.filter((x) => x.rarity === "dragon" && (!x.cls || x.cls === G.cls));
+            if (dPool.length) { const dIt = dPool[Math.floor(Math.random() * dPool.length)]; G.inv.push(dIt.id); }
+            toast("🏆👑 พิชิตหอคอยมิติครบ 100 ชั้น!! +3000💰 + ของมังกร!");
+            G.dungeon = null;
+            G.dungeonProgress = DUNGEON_MAX; // fully cleared
+            setUi((u) => ({ ...u, dungeonFloor: 0 }));
+            endBattle(false);
+            syncPlayer();
+          } else {
+            G.dungeon.floor++;
+            dungeonSpawn(G.dungeon.floor);
+          }
+        }, 1300);
+        return;
+      }
+      setTimeout(() => endBattle(false), 1200);
+    };
+
+    const enemyTurn = () => {
+      if (!G.enemy) return;
+      // 🐲 boss phase 2: enrage below 50% HP (once)
+      if (G.enemy.boss && !G.enemy.enraged && G.enemy.hp <= G.enemy.maxHp * 0.5) {
+        G.enemy.enraged = true;
+        G.enemy.atk = Math.round(G.enemy.atk * 1.3); // hits harder
+        const em = G.enemy.mesh;
+        // turn red & grow
+        em.traverse((o) => {
+          if (o.isMesh && o.material && "emissive" in o.material && o.material.emissive) {
+            o.material.emissive = new THREE.Color(0xaa1010);
+            o.material.emissiveIntensity = 0.8;
+          }
+        });
+        em.scale.multiplyScalar(1.2);
+        // rage aura
+        const aura = new THREE.Mesh(
+          new THREE.RingGeometry(0.7, 0.95, 24),
+          new THREE.MeshBasicMaterial({ color: 0xff2a2a, transparent: true, opacity: 0.6, side: THREE.DoubleSide })
+        );
+        aura.rotation.x = -Math.PI / 2; aura.position.y = 0.05;
+        em.add(aura);
+        G.enemy.rageAura = aura;
+        burst(em.position, 0xff2a2a, 1.5);
+        if (G.sfx) G.sfx.crit();
+        setUi((u) => ({ ...u, enemy: { ...u.enemy, enraged: true }, msg: `🐲🔥 ${G.enemy.name} โกรธจัด! เข้าสู่เฟส 2 — พลังโจมตีเพิ่มขึ้น!` }));
+      }
+      // 🔥 burn ticks at the start of the enemy's turn
+      if (G.est.burn > 0) {
+        G.est.burn--;
+        G.enemy.hp = Math.max(0, G.enemy.hp - 4);
+        burst(G.enemy.mesh.position, 0xf5652e);
+        setUi((u) => ({ ...u, enemy: { ...u.enemy, hp: G.enemy.hp }, msg: `🔥 ไฟเผาไหม้! -4 HP (เหลือ ${G.est.burn} เทิร์น)` }));
+        if (G.enemy.hp <= 0) { winBattle(); return; }
+      }
+      // ☠️ poison ticks (scales with enemy max HP, more than burn)
+      if (G.est.poison > 0) {
+        G.est.poison--;
+        const pd = Math.max(5, Math.round(G.enemy.maxHp * 0.06));
+        G.enemy.hp = Math.max(0, G.enemy.hp - pd);
+        burst(G.enemy.mesh.position, 0x6ab04a);
+        setUi((u) => ({ ...u, enemy: { ...u.enemy, hp: G.enemy.hp }, msg: `☠️ พิษกัดกร่อน! -${pd} HP (เหลือ ${G.est.poison} เทิร์น)` }));
+        if (G.enemy.hp <= 0) { winBattle(); return; }
+      }
+      // 🩸 bleed ticks (physical, ignores nothing)
+      if (G.est.bleed > 0) {
+        G.est.bleed--;
+        const bd = Math.max(4, Math.round(G.enemy.maxHp * 0.045));
+        G.enemy.hp = Math.max(0, G.enemy.hp - bd);
+        burst(G.enemy.mesh.position, 0xd9536b);
+        setUi((u) => ({ ...u, enemy: { ...u.enemy, hp: G.enemy.hp }, msg: `🩸 เลือดไหล! -${bd} HP (เหลือ ${G.est.bleed} เทิร์น)` }));
+        if (G.enemy.hp <= 0) { winBattle(); return; }
+      }
+      // ❄️ frozen enemies skip their turn
+      if (G.est.frozen) {
+        G.est.frozen = false;
+        G.player.mp = Math.min(effMaxMp(), G.player.mp + 6 + (G.cls === "mage" ? 4 : 0));
+        setUi((u) => ({ ...u, bstate: "choose", mp: Math.ceil(G.player.mp), msg: "❄️ ศัตรูถูกแช่แข็ง ขยับไม่ได้!" }));
+        return;
+      }
+      G.banim = { type: "enemyAttack", t: 0, dur: 0.55 };
+      setUi((u) => ({ ...u, bstate: "busy" }));
+    };
+
+    // battle actions (called from UI)
+    G.act = (kind, arg) => {
+      if (G.mode !== "battle" || G.banim) return;
+      if (kind === "attack") {
+        G.banim = { type: "playerAttack", t: 0, dur: G.cls === "warrior" ? 0.5 : 0.65, mult: 1 };
+        const atkMsg = G.cls === "archer" ? "เชอร์รี่ง้างธนูยิง! 🏹" : G.cls === "mage" ? "เชอร์รี่ร่ายลูกแก้วอาคม! 🔮" : G.cls === "assassin" ? "เชอร์รี่พุ่งแทงมีดคู่! 🗡️" : G.cls === "lancer" ? "เชอร์รี่จ้วงหอกทะลวง! 🔱" : G.cls === "samurai" ? "เชอร์รี่ชักดาบฟันเร็ว! ⚔️" : "เชอร์รี่ฟันดาบเต็มแรง! ⚔️";
+        setUi((u) => ({ ...u, bstate: "busy", skillMenu: false, msg: atkMsg }));
+      } else if (kind === "skill") {
+        const sk = CLASS_SKILLS[G.cls].find((s) => s.id === arg);
+        if (!sk) return;
+        const cost = sk.cost || 8;
+        if (G.player.mp < cost) { toast(`💧 มานาไม่พอ! ต้องการ ${cost} มานา (มี ${Math.floor(G.player.mp)})`); return; }
+        G.player.mp -= cost;
+        // 🏹⚡ archer single-arrow skills charge for 1s before the shot — longer animation
+        const chargeSkill = G.cls === "archer" && sk.id === "a_power"; // only ธนูเจาะเกราะ charges
+        G.banim = { type: "playerAttack", t: 0, dur: chargeSkill ? 1.75 : 0.6, mult: 1, skill: sk, chargeSkill };
+        setUi((u) => ({ ...u, bstate: "busy", skillMenu: false, msg: `${sk.emoji} ${sk.name}! (-${cost}💧)` }));
+        syncPlayer();
+      } else if (kind === "ult") {
+        if (G.ultUsed) { toast("ท่าไม้ตายใช้ได้ 1 ครั้งต่อศึก!"); return; }
+        G.ultUsed = true;
+        const U = ULTS[G.cls];
+        G.banim = { type: "ult", t: 0, dur: (G.cls === "warrior" || G.cls === "lancer" || G.cls === "samurai") ? 0.9 : G.cls === "archer" ? 1.1 : G.cls === "assassin" ? 0.75 : 2.4, hits: 0, total: 0 };
+        setUi((u) => ({ ...u, bstate: "busy", skillMenu: false, ultUsed: true, msg: `🌟 ${U.emoji} ${U.name}!!` }));
+      } else if (kind === "catch") {
+        if (G.player.balls <= 0) { toast("บอลหัวใจหมด! ชนะศึกเพื่อรับเพิ่ม"); return; }
+        G.player.balls--;
+        G.banim = { type: "throwBall", t: 0, dur: 1.9 };
+        setUi((u) => ({ ...u, bstate: "busy", msg: "💗 ขว้างบอลหัวใจ!" }));
+        syncPlayer();
+      } else if (kind === "run") {
+        setUi((u) => ({ ...u, msg: "วิ่งหนีสำเร็จ!" }));
+        endBattle(true);
+      }
+    };
+
+    // ---------- 🤖 Auto-battle AI ----------
+    G.auto = false;
+    G.toggleAuto = () => {
+      G.auto = !G.auto;
+      setUi((u) => ({ ...u, auto: G.auto }));
+      toast(G.auto ? "🤖 เปิดโหมดต่อสู้อัตโนมัติ" : "🎮 กลับมาบังคับเอง");
+    };
+    // ⏩ battle speed: cycle 1x → 2x → 3x
+    G.battleSpeed = 1;
+    G.cycleSpeed = () => {
+      G.battleSpeed = G.battleSpeed >= 3 ? 1 : G.battleSpeed + 1;
+      setUi((u) => ({ ...u, battleSpeed: G.battleSpeed }));
+      toast(`⏩ ความเร็วต่อสู้ ×${G.battleSpeed}`);
+    };
+    // 📖 tutorial steps for new players
+    const TUTORIAL = [
+      { emoji: "🕹️", title: "เดินสำรวจ", text: "ใช้จอยสติ๊กมุมซ้ายล่าง (หรือปุ่มลูกศร) เดินหามอนสเตอร์ เข้าใกล้เพื่อเริ่มต่อสู้" },
+      { emoji: "⚔️", title: "ต่อสู้", text: "แตะ ⚔️ โจมตี · ⚡ ปล่อยสกิลอาชีพ (ใช้มานา 💧) · 💗 จับมอนสเตอร์ตอนเลือดน้อย" },
+      { emoji: "⚡", title: "สกิล & เลเวล", text: "เลเวลอัพได้แต้มสกิล 5 แต้ม → กด ⚡ (ขวาบน) อัพสกิลอาชีพให้แรงถึง Lv.20" },
+      { emoji: "🐾", title: "สัตว์เลี้ยง", text: "จับมอนสเตอร์มาเป็นทีม 3 ตัว (ปุ่ม 🐾) ช่วยบัฟ+ร่วมรบ · ผสมพันธุ์ได้ตัวหายาก" },
+      { emoji: "🌀", title: "แผนที่ & หอคอย", text: "แท่นวาร์ป 🌀 ไปแดนอื่น · ประตูมิติ 🗼 เข้าหอคอย 100 ชั้น · ⚔️ ท้าดวลเจ้าถิ่นแต่ละแดน" },
+      { emoji: "📜", title: "ภารกิจ & ร้านค้า", text: "ทำภารกิจ 📜 รับ EXP+ทองก้อนโต · ซื้อของ/น้ำยาที่ร้าน 🏪 · ดูความสำเร็จ 🏅 และบ้านถ้วยรางวัล 🏠" },
+    ];
+    G.TUTORIAL = TUTORIAL;
+    G.tutNext = () => {
+      const next = (G.tutStep == null ? 0 : G.tutStep) + 1;
+      if (next >= TUTORIAL.length) { G.tutStep = null; setUi((u) => ({ ...u, tutStep: null })); }
+      else { G.tutStep = next; setUi((u) => ({ ...u, tutStep: next })); }
+    };
+    G.tutSkip = () => { G.tutStep = null; setUi((u) => ({ ...u, tutStep: null })); };
+    G.showTutorial = () => { G.tutStep = 0; setUi((u) => ({ ...u, tutStep: 0 })); };
+    // 👤 NPC story chapters — advance by meeting goals
+    const STORY = [
+      { text: "โอ้ เจ้าหนูเชอร์รี่! ข้าคือผู้เฒ่าประจำหมู่บ้าน หมู่บ้านเรากำลังเดือดร้อน เหล่าปีศาจอาละวาด... เจ้าช่วยปราบมอนสเตอร์ 3 ตัวก่อนได้ไหม?", goal: (st) => st.wins >= 3, reward: 100, hint: "ปราบมอนสเตอร์ 3 ตัว" },
+      { text: "เก่งมาก! พลังของเจ้าไม่ธรรมดา... ข้าเห็นแววจอมยุทธ์ ลองไปจับมอนสเตอร์มาเป็นเพื่อนคู่ใจสัก 1 ตัวสิ มันจะช่วยเจ้าได้มาก", goal: (st) => st.species >= 1, reward: 150, hint: "จับมอนสเตอร์ 1 ตัว" },
+      { text: "ดีแล้ว! ทีนี้ข้าจะบอกความลับ... มีหอคอยมิติปริศนาปรากฏขึ้น (ประตู 🗼) ว่ากันว่าผู้พิชิตจะได้พลังมหาศาล ลองไต่ให้ถึงชั้น 5 ดู", goal: (st) => st.floor >= 5, reward: 250, hint: "พิชิตหอคอยชั้น 5" },
+      { text: "น่าทึ่งจริงๆ! เจ้าแข็งแกร่งขึ้นมาก... ตอนนี้แต่ละแดนมีเจ้าถิ่นคอยระราน (ปุ่ม ⚔️ ท้าดวลเจ้าถิ่น) ลองปราบสัก 1 ตนเพื่อปลดปล่อยดินแดน", goal: (st) => st.biomeBoss >= 1, reward: 400, hint: "ปราบเจ้าถิ่น 1 แดน" },
+      { text: "เจ้าคือฮีโร่ที่หมู่บ้านรอคอย! เหล่าปีศาจเริ่มหวาดกลัวเจ้าแล้ว จงเดินหน้าเป็นตำนานต่อไป... ขอให้เส้นทางของเจ้าเต็มไปด้วยชัยชนะ 🌸", goal: () => true, reward: 500, hint: "จบบท — ขอบคุณที่เล่น!" },
+    ];
+    G.STORY = STORY;
+    G.storyChapter = 0;
+    const storyState = () => ({
+      wins: (G.achStats && G.achStats.wins) || 0,
+      species: Object.keys(G.col || {}).length,
+      floor: Math.max((G.achStats && G.achStats.floor) || 0, (G.dungeonProgress || 1) - 1),
+      biomeBoss: Object.keys(G.biomeBossDefeated || {}).length,
+    });
+    G.talkNPC = () => {
+      const ch = G.storyChapter || 0;
+      if (ch >= STORY.length) { setUi((u) => ({ ...u, npcTalk: { text: "ขอบใจนะเจ้าหนู เจ้าคือความภูมิใจของหมู่บ้าน! 🌸", done: true, last: true } })); return; }
+      const chapter = STORY[ch];
+      const st = storyState();
+      const met = chapter.goal(st);
+      setUi((u) => ({ ...u, npcTalk: { text: chapter.text, hint: chapter.hint, met, reward: chapter.reward, chapter: ch } }));
+    };
+    G.claimStory = () => {
+      const ch = G.storyChapter || 0;
+      if (ch >= STORY.length) { setUi((u) => ({ ...u, npcTalk: null })); return; }
+      const chapter = STORY[ch];
+      if (!chapter.goal(storyState())) return;
+      G.gold += chapter.reward;
+      G.storyChapter = ch + 1;
+      if (G.sfx) G.sfx.levelup();
+      toast(`📖 บทที่ ${ch + 1} สำเร็จ! +${chapter.reward}💰`);
+      if (G.npc) G.npc.userData.mark.visible = G.storyChapter < STORY.length;
+      setUi((u) => ({ ...u, npcTalk: null, storyChapter: G.storyChapter }));
+      syncPlayer();
+    };
+    G.closeNPC = () => setUi((u) => ({ ...u, npcTalk: null }));
+    // 🔄 New Game+: restart tougher, keep gear/pets/gold, reset level
+    G.startNGPlus = () => {
+      const eligible = (G.dungeonProgress || 1) > 100 || G.player.level >= 20;
+      if (!eligible) { toast("🔒 ปลดล็อก New Game+ เมื่อพิชิตหอคอย 100 ชั้น หรือถึง Lv.20"); return; }
+      G.ngPlus = (G.ngPlus || 0) + 1;
+      // reset progression but keep collection/gear
+      G.player.level = 1; G.player.exp = 0;
+      const C = CLASSES[G.cls];
+      G.player.maxHp = C.hp; G.player.hp = C.hp; G.player.atk = C.atk; G.player.def = C.def;
+      G.player.sp = 0; G.player.skillPts = 0;
+      G.player.maxMp = effMaxMp(); G.player.mp = G.player.maxMp;
+      G.dungeonProgress = 1;
+      G.combo = 0;
+      // reset skill ranks to 1 (re-earn them, but keep gear power)
+      G.skillRanks = {};
+      CLASS_SKILLS[G.cls].forEach((sk) => { G.skillRanks[sk.id] = 1; });
+      toast(`🔄✨ New Game+ ${G.ngPlus}! ศัตรูโหดขึ้น ${Math.round((G.ngPlus) * 40)}% · รางวัลเพิ่ม ${Math.round(G.ngPlus * 50)}% (เก็บของ+สัตว์เลี้ยงไว้)`);
+      setUi((u) => ({ ...u, ngPlus: G.ngPlus, mode: "explore", homeOpen: false }));
+      char.position.set(0, 0, 0);
+      syncPlayer();
+      saveGame && saveGame();
+    };
+    const autoDecide = () => {
+      const e = G.enemy;
+      if (!e) return;
+      const hpPct = G.player.hp / effMaxHp();
+      // 1) very low HP → drink a potion
+      if (hpPct < 0.3 && G.potions > 0) { G.usePotion(); return; }
+      // 2) mage with a heal skill and hurt → heal
+      if (hpPct < 0.55) {
+        const healSk = CLASS_SKILLS[G.cls].find((sk) => sk.heal && (sk.cost || 8) <= G.player.mp);
+        if (healSk && Math.random() < 0.8) { G.act("skill", healSk.id); return; }
+      }
+      // 3) weak wild we don't own yet → try to catch
+      if (!e.boss && !G.pets[e.spId] && G.player.balls > 0 && e.hp / e.maxHp < 0.3) { G.act("catch"); return; }
+      // 4) open strong fights with the ultimate
+      if (!G.ultUsed && (e.boss || e.maxHp > effMaxHp())) { G.act("ult"); return; }
+      // 5) choose among affordable skills with WEIGHTED RANDOM for variety
+      {
+        const affordable = CLASS_SKILLS[G.cls].filter((sk) => !sk.heal && (sk.cost || 8) <= G.player.mp);
+        if (affordable.length) {
+          const weak = WEAK[e.spId]; // enemy elemental weakness
+          const scored = affordable.map((sk) => {
+            const r = G.skillRanks[sk.id] || 1;
+            let w = (sk.mult + sk.perLv * (r - 1)) * (sk.hits || 1) + r * 0.25;
+            // situational bonuses
+            if (SKILL_ELEM[sk.id] && SKILL_ELEM[sk.id] === weak) w *= 2.0; // hits weakness
+            if ((sk.freeze || sk.stun) && !e.frozen && e.hp / e.maxHp > 0.5) w *= 1.6; // lock down healthy foes
+            if (sk.poison && e.hp / e.maxHp > 0.4) w *= 1.4; // poison worth it on tanky foes
+            if (sk.buffDef && hpPct < 0.6) w *= 1.5; // defensive when hurt
+            // recently used? damp it so we don't spam the same skill
+            if (G._lastSkill === sk.id) w *= 0.4;
+            return { sk, w: Math.max(0.1, w) };
+          });
+          // weighted random pick
+          const total = scored.reduce((a, s) => a + s.w, 0);
+          let roll = Math.random() * total;
+          let chosen = scored[0].sk;
+          for (const s of scored) { roll -= s.w; if (roll <= 0) { chosen = s.sk; break; } }
+          G._lastSkill = chosen.id;
+          G.act("skill", chosen.id);
+          return;
+        }
+      }
+      // 6) no mana → occasionally still just attack
+      G._lastSkill = null;
+      G.act("attack");
+    };
+
+    // ---------- Input (tap-to-move + keys + pinch zoom) ----------
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    let pinchDist = 0;
+    const touchDist = (e) => Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    const onTap = (e) => {
+      if (e.touches && e.touches.length === 2) { pinchDist = touchDist(e); return; }
+      if (G.mode !== "explore") return;
+      const cx = e.touches ? e.touches[0].clientX : e.clientX;
+      const cy = e.touches ? e.touches[0].clientY : e.clientY;
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((cx - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((cy - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+      const hit = new THREE.Vector3();
+      raycaster.ray.intersectPlane(floorPlane, hit);
+      if (hit) {
+        const r = Math.hypot(hit.x, hit.z);
+        if (r > FIELD_R - 0.3) {
+          hit.x *= (FIELD_R - 0.3) / r;
+          hit.z *= (FIELD_R - 0.3) / r;
+        }
+        G.moveTarget = new THREE.Vector3(hit.x, 0, hit.z);
+      }
+    };
+    const onPinchMove = (e) => {
+      if (e.touches && e.touches.length === 2 && pinchDist > 0) {
+        const d = touchDist(e);
+        G.zoom((pinchDist - d) * 0.02);
+        pinchDist = d;
+      }
+    };
+    const onPinchEnd = () => (pinchDist = 0);
+    const onWheel = (e) => { e.preventDefault(); G.zoom(e.deltaY * 0.01); };
+    renderer.domElement.addEventListener("mousedown", onTap);
+    renderer.domElement.addEventListener("touchstart", onTap, { passive: true });
+    renderer.domElement.addEventListener("touchmove", onPinchMove, { passive: true });
+    renderer.domElement.addEventListener("touchend", onPinchEnd);
+    renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
+    const onKeyDown = (e) => (G.keys[e.key.toLowerCase()] = true);
+    const onKeyUp = (e) => (G.keys[e.key.toLowerCase()] = false);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+
+    G.startGame = (clsId) => {
+      G.cls = clsId || "warrior";
+      G.playerName = (G.pendingName && G.pendingName.trim()) || "เชอร์รี่";
+      const C = CLASSES[G.cls];
+      G.mode = "explore";
+      G.player = {
+        level: 1, exp: 0,
+        maxHp: C.hp, hp: C.hp, atk: C.atk, def: C.def,
+        mp: 0, maxMp: 0, // set below via effMaxMp
+        skillPts: 0, sp: 0, balls: 3,
+        specials: 2 + (G.cls === "mage" ? 2 : 0),
+      };
+      G.player.maxMp = effMaxMp();
+      G.player.mp = G.player.maxMp;
+      // every class skill starts at rank 1
+      G.skillRanks = {};
+      CLASS_SKILLS[G.cls].forEach((sk) => { G.skillRanks[sk.id] = 1; });
+      G.col = {};
+      G.pets = {};
+      G.inv = [];
+      G.equip = EMPTY_EQUIP();
+      G.plus = {};
+      G.potions = 1;
+      G.mpPotions = 1;
+      G.bossSpawned = {};
+      G.gold = 80;
+      G.dungeonProgress = 1;
+      G.achStats = { wins: 0, bosses: 0, floor: 0, dragon: 0, playSec: 0, catches: 0 };
+      G.achUnlocked = {};
+      G.combo = 0;
+      G.team = [];
+      G.petSp = 0;
+      G.petSkillLv = {};
+      G.ngPlus = 0;
+      G.storyChapter = 0;
+      const starter = { warrior: "st_w", archer: "st_a", mage: "st_m", assassin: "st_s", lancer: "st_l", samurai: "st_k" }[G.cls];
+      G.inv = [starter];
+      G.equip.weapon = starter; // 🗡️ starting weapon of your class
+      G.setWeaponVisual(starter);
+      G.setOutfitVisual(null);
+      applyGear();
+      G.refreshShop(true); // stock the shop for free
+      G.setBuddy(null);
+      char.position.set(0, 0, 0);
+      toast(`${C.emoji} เริ่มต้นการผจญภัยในสาย${C.name}!`);
+      G.tutStep = 0; // 📖 start tutorial for new players
+      if (G.computeTitle) G.computeTitle();
+      setTimeout(() => setUi((u) => ({ ...u, tutStep: 0 })), 600);
+      G.quests = []; refreshQuests(); // 📜 initial quests
+      setTimeout(() => G.saveGame && G.saveGame(), 100); // 💾 save the fresh start
+      setUi((u) => ({ ...u, mode: "explore", cls: G.cls, col: {}, pets: {}, inv: [], equip: EMPTY_EQUIP(), msg: "" }));
+      syncPlayer();
+    };
+
+    // ---------- 💾 Save system (works on the deployed website; safely skipped where storage is blocked) ----------
+    const SAVE_BASE = "cherry-adventure-save-v1";
+    G.saveSlot = 0; // active slot 0/1/2
+    const slotKey = (i) => `${SAVE_BASE}-slot${i == null ? G.saveSlot : i}`;
+    // migrate an old single-save into slot 0 (once)
+    try {
+      const oldRaw = window.localStorage.getItem(SAVE_BASE);
+      if (oldRaw && !window.localStorage.getItem(slotKey(0))) {
+        window.localStorage.setItem(slotKey(0), oldRaw);
+        window.localStorage.removeItem(SAVE_BASE);
+      }
+    } catch (e) {}
+    const saveGame = () => {
+      if (G.mode !== "explore" && G.mode !== "battle") return;
+      try {
+        window.localStorage.setItem(slotKey(), JSON.stringify({
+          v: 1, cls: G.cls, name: G.playerName, custom: G.custom, player: G.player, dungeonProgress: G.dungeonProgress || 1, skillRanks: G.skillRanks, ultRank: G.ultRank || 1, sellPriority: G.sellPriority, baseStats: G.baseStats, achStats: G.achStats, achUnlocked: G.achUnlocked, biomeBossDefeated: G.biomeBossDefeated,
+          col: G.col, pets: G.pets, inv: G.inv, equip: G.equip, plus: G.plus,
+          potions: G.potions, mpPotions: G.mpPotions, gold: G.gold, buddy: G.buddy,
+          team: G.team, petSp: G.petSp, petSkillLv: G.petSkillLv, ngPlus: G.ngPlus || 0, storyChapter: G.storyChapter || 0,
+          pos: { x: char.position.x, z: char.position.z },
+        }));
+      } catch (e) { /* storage unavailable — keep playing without saves */ }
+    };
+    G.saveGame = saveGame;
+    const loadSave = (i) => {
+      try {
+        const raw = window.localStorage.getItem(slotKey(i));
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) { return null; }
+    };
+    // list all 3 slots for the title screen
+    G.readSlots = () => {
+      const slots = [];
+      for (let i = 0; i < 3; i++) {
+        const sv = loadSave(i);
+        slots.push(sv && sv.player ? { lv: sv.player.level, cls: sv.cls, gold: sv.gold || 0, ngPlus: sv.ngPlus || 0, name: sv.name || "เชอร์รี่" } : null);
+      }
+      return slots;
+    };
+    G.pickSlot = (i) => {
+      G.saveSlot = i;
+      const sv = loadSave(i);
+      if (sv && sv.player) { G.continueGame(); }
+      else { setUi((u) => ({ ...u, mode: "create", saveSlot: i })); }
+    };
+    G.clearSave = (i) => {
+      const target = i == null ? G.saveSlot : i;
+      try {
+        window.localStorage.removeItem(slotKey(target));
+        if (target === 0) window.localStorage.removeItem(SAVE_BASE); // also clear any legacy save
+      } catch (e) {}
+      setUi((u) => ({ ...u, slots: G.readSlots(), confirmDelete: null }));
+      toast(`🗑️ ล้างช่อง ${target + 1} แล้ว!`);
+    };
+    G.continueGame = () => {
+      const d = loadSave();
+      if (!d) return;
+      G.cls = d.cls || "warrior";
+      G.playerName = d.name || "เชอร์รี่";
+      Object.entries(d.custom || {}).forEach(([k, v]) => G.setCustom(k, v));
+      G.player = { ...d.player };
+      G.col = d.col || {};
+      G.pets = d.pets || {};
+      G.inv = d.inv || [];
+      G.equip = { ...EMPTY_EQUIP(), ...(d.equip || {}) };
+      G.plus = d.plus || {};
+      G.potions = d.potions == null ? 1 : d.potions;
+      G.mpPotions = d.mpPotions == null ? 1 : d.mpPotions;
+      G.player.maxMp = effMaxMp();
+      if (G.player.mp == null) G.player.mp = G.player.maxMp;
+      G.gold = d.gold == null ? 0 : d.gold;
+      G.dungeonProgress = d.dungeonProgress || 1;
+      G.skillRanks = d.skillRanks || {};
+      G.ultRank = d.ultRank || 1;
+      G.sellPriority = (d.sellPriority && d.sellPriority.length === SLOTS.length) ? d.sellPriority : SLOTS.slice();
+      G.baseStats = d.baseStats || { atk: 0, hp: 0, def: 0, crit: 0, luck: 0, mp: 0 };
+      G.achStats = d.achStats || { wins: 0, bosses: 0, floor: 0, dragon: 0 };
+      G.achUnlocked = d.achUnlocked || {};
+      G.biomeBossDefeated = d.biomeBossDefeated || {};
+      CLASS_SKILLS[G.cls].forEach((sk) => { if (!G.skillRanks[sk.id]) G.skillRanks[sk.id] = 1; });
+      G.bossSpawned = {};
+      G.mode = "explore";
+      G.setWeaponVisual(G.equip.weapon);
+      G.setOutfitVisual(G.equip.outfit);
+      applyGear();
+      G.refreshShop(true);
+      G.team = d.team || (d.buddy ? [d.buddy] : []);
+      G.petSp = d.petSp || 0;
+      G.petSkillLv = d.petSkillLv || {};
+      G.ngPlus = d.ngPlus || 0;
+      G.storyChapter = d.storyChapter || 0;
+      if (G.npc) G.npc.userData.mark.visible = G.storyChapter < (G.STORY ? G.STORY.length : 5);
+      if (d.buddy && G.pets[d.buddy]) G.setBuddy(d.buddy);
+      else G.setBuddy(null);
+      if (d.pos) char.position.set(d.pos.x || 0, 0, d.pos.z || 0);
+      G.quests = []; refreshQuests(); // 📜
+      if (G.checkAchievements) G.checkAchievements();
+      if (G.computeTitle) G.computeTitle();
+      toast(`▶ ยินดีต้อนรับกลับ! ${CLASSES[G.cls].emoji} เชอร์รี่สาย${CLASSES[G.cls].name} Lv.${G.player.level}`);
+      setUi((u) => ({
+        ...u, mode: "explore", cls: G.cls,
+        col: { ...G.col }, pets: { ...G.pets }, msg: "",
+      }));
+      syncPlayer();
+    };
+    // read all 3 save slots → show them on the title screen
+    {
+      const slots = G.readSlots();
+      if (slots.some((s) => s)) {
+        setTimeout(() => setUi((u) => ({ ...u, slots })), 0);
+      }
+    }
+
+    // ---------- Loop ----------
+    vivify(scene); // 🎨 make the whole world pop
+
+    const clock = new THREE.Clock();
+    let blinkTimer = 0, nextBlink = 2;
+    let yaw = Math.PI;
+    let raf;
+    let regenAcc = 0;
+
+    const animate = () => {
+      raf = requestAnimationFrame(animate);
+      try {
+      const dt = Math.min(clock.getDelta(), 0.05);
+      dtGlobal = dt;
+      const t = clock.getElapsedTime();
+
+      // ---------- 🌗 day/night update ----------
+      {
+        const dayT = (t % DAY_CYCLE) / DAY_CYCLE;
+        const sunA = dayT * Math.PI * 2 + 0.7; // start mid-morning
+        const sunH = Math.sin(sunA);
+        const dayAmt = Math.min(1, Math.max(0, (sunH + 0.25) / 0.9)); // 0 = night, 1 = day
+        G.dayPhaseAmt = dayAmt;
+        // sky & fog (day color tinted by the current biome)
+        const daySky = G.biomeSky || dayColors.skyDay;
+        skyTmp.lerpColors(dayColors.skyNight, daySky, dayAmt);
+        scene.background.copy(skyTmp);
+        const fogSky = G.biomeFog || daySky;
+        scene.fog.color.copy(skyTmp).lerp(fogSky, dayAmt * 0.5);
+        // lights (soft, no glare)
+        amb.intensity = 0.13 + 0.25 * dayAmt;
+        hemi.intensity = 0.12 + 0.36 * dayAmt;
+        hemi.color.lerpColors(dayColors.hemiSkyNight, dayColors.hemiSkyDay, dayAmt);
+        key.intensity = 0.16 + 0.62 * dayAmt;
+        key.color.lerpColors(dayColors.sunNight, dayColors.sunDay, dayAmt);
+        // sun/moon travels across the sky → shadows move through the day
+        key.position.set(Math.cos(sunA) * 9, 4 + Math.max(0.1, sunH) * 8, 7);
+        // stars fade in at night
+        starMat.opacity = Math.max(0, 1 - dayAmt * 2.2);
+        // fireflies drift at night
+        const nightAmt = 1 - dayAmt;
+        fireflies.forEach((f, i) => {
+          f.material.opacity = Math.max(0, nightAmt - 0.35) * (0.5 + Math.sin(t * 3 + f.userData.ph) * 0.5);
+          const fa = f.userData.a + t * f.userData.sp;
+          f.position.set(
+            Math.cos(fa) * f.userData.r,
+            0.7 + Math.sin(t * 1.3 + i) * 0.4,
+            Math.sin(fa) * f.userData.r
+          );
+        });
+        // cottage windows light up in the evening
+        const glow = 0.15 + nightAmt * 1.5;
+        windowMats.forEach((m2) => (m2.emissiveIntensity = glow));
+        // 👻 ghost boss: appears deep in the night, dissolves at dawn
+        if (G.mode !== "title" && G.mode !== "create") {
+          if (dayAmt < 0.22 && !ghostMesh && t - (G.lastGhostT || -999) > 50) {
+            G.lastGhostT = t;
+            spawnGhost();
+          } else if (dayAmt > 0.5 && ghostMesh && (!G.enemy || G.enemy.mesh !== ghostMesh)) {
+            despawnGhost();
+          }
+        }
+        // phase badge
+        const phase = dayAmt > 0.65 ? "☀️ กลางวัน" : dayAmt > 0.3 ? (Math.cos(sunA) < 0 ? "🌅 เย็นย่ำ" : "🌄 รุ่งเช้า") : "🌙 กลางคืน";
+        if (G.dayPhase !== phase) {
+          G.dayPhase = phase;
+          setUi((u) => ({ ...u, dayPhase: phase }));
+        }
+      }
+
+      // 🎌 ahoge springs around
+      ahoge.rotation.z = Math.sin(t * 2.4) * 0.14;
+      // 💇 hair flows — gentle breeze while idle, streams back while running
+      {
+        const spd = G.vel ? Math.min(1.6, Math.hypot(G.vel.x || 0, G.vel.z || 0)) : 0;
+        const wind = 1 + spd * 1.4;
+        for (const pv of hairSwayParts) {
+          if (!pv.userData.base) pv.userData.base = { x: pv.rotation.x, z: pv.rotation.z };
+          const sw = pv.userData.sway;
+          const b = pv.userData.base;
+          pv.rotation.z = b.z + Math.sin(t * 2.3 + sw.phase) * sw.amp * 0.45 * wind;
+          pv.rotation.x = b.x + Math.sin(t * 1.8 + sw.phase * 1.35) * sw.amp * 0.55 * wind + spd * 0.28; // trail back when moving
+        }
+      }
+      // 🛡️ shield shows for warriors once a class is chosen
+      if (shield) shield.visible = G.cls === "warrior" && G.mode !== "create";
+      // 🗡️ off-hand dagger shows for assassins
+      if (offDagger) offDagger.visible = G.cls === "assassin" && G.mode !== "create";
+      // 🏷️ name label shows while exploring, hidden in creator/battle
+      if (nameSprite) nameSprite.visible = G.mode === "explore";
+      ahoge.rotation.x = Math.sin(t * 1.7 + 1) * 0.08;
+
+      // blink
+      blinkTimer += dt;
+      if (blinkTimer > nextBlink) {
+        const p = (blinkTimer - nextBlink) / 0.22;
+        eyes.scale.y = p < 1 ? Math.abs(Math.cos(p * Math.PI)) * 0.9 + 0.1 : 1;
+        if (p >= 1) { blinkTimer = 0; nextBlink = 1.5 + Math.random() * 3; eyes.scale.y = 1; }
+      }
+
+      // wild monster idle/wander (both modes; battle enemy excluded since removed from wilds)
+      wilds.forEach((m, i) => {
+        const w = m.userData.wander;
+        if (m.userData.shy > 0) m.userData.shy -= dt;
+        if (m.userData.shinyRing) { m.userData.shinyRing.rotation.z = t * 2; m.userData.shinyRing.material.opacity = 0.5 + Math.abs(Math.sin(t * 4)) * 0.4; }
+        drawMonsterLabel(m); // 🏷️ keep level tag current (red if higher)
+        let dx, dz;
+        if (m.userData.golden && G.mode === "explore") {
+          // 🌟 golden monster runs away from Cherry!
+          const fx2 = m.position.x - char.position.x, fz2 = m.position.z - char.position.z;
+          const fd = Math.max(0.001, Math.hypot(fx2, fz2));
+          dx = (fx2 / fd) * 2.4 * dt * 10;
+          dz = (fz2 / fd) * 2.4 * dt * 10;
+          m.position.x += (fx2 / fd) * 2.4 * dt;
+          m.position.z += (fz2 / fd) * 2.4 * dt;
+          m.rotation.y = Math.atan2(fx2, fz2);
+        } else {
+          const a = w.ph + t * w.sp;
+          const tx = w.cx + Math.cos(a) * w.r;
+          const tz = w.cz + Math.sin(a) * w.r;
+          dx = tx - m.position.x;
+          dz = tz - m.position.z;
+          m.position.x += dx * dt * 1.5;
+          m.position.z += dz * dt * 1.5;
+          if (Math.hypot(dx, dz) > 0.05) m.rotation.y = Math.atan2(dx, dz);
+        }
+        // hop
+        m.userData.body.position.y = (FLOATY[m.userData.spId] ? 0.95 : 0.5) + Math.abs(Math.sin(t * 4 + i)) * 0.08;
+        if (m.userData.star) m.userData.star.rotation.y = t * 3;
+        // keep in field & out of obstacles
+        const rr = Math.hypot(m.position.x, m.position.z);
+        if (rr > FIELD_R - 0.4) { m.position.x *= (FIELD_R - 0.4) / rr; m.position.z *= (FIELD_R - 0.4) / rr; }
+        pushOut(m, 0.3);
+      });
+
+      // respawn wilds
+      if (wilds.length < 9) {
+        G.respawnT += dt;
+        if (G.respawnT > 3) { G.respawnT = 0; spawnWild(); }
+        // ☁️ sky islands: drifting clouds + rising star motes (sky biome only)
+        if (G.skyDecor && G.skyDecor.visible) {
+          if (G.skyClouds) G.skyClouds.forEach((c) => {
+            c.position.x += c.userData.sp * dt;
+            if (c.position.x > FIELD_R + 5) { c.position.x = -FIELD_R - 5; c.position.z = rnd(-FIELD_R, FIELD_R); }
+          });
+          if (G.skyMotes) G.skyMotes.forEach((m) => {
+            m.position.y += m.userData.rise * dt;
+            m.rotation.y += m.userData.spin * dt;
+            m.position.x += Math.sin(t + m.userData.sway) * 0.005;
+            if (m.position.y > 4.5) { m.position.y = 0.3; m.position.x = rnd(-FIELD_R, FIELD_R); m.position.z = rnd(-FIELD_R, FIELD_R); }
+          });
+        }
+        // 🌪️ sandstorm drift (desert only)
+        if (G.desertDecor && G.desertDecor.visible && G.sandParticles) {
+          G.sandParticles.forEach((p) => {
+            p.position.x += p.userData.sp * dt;             // blow along +x
+            p.position.y += Math.sin(t * 2 + p.userData.sway) * 0.01;
+            if (p.position.x > FIELD_R) { p.position.x = -FIELD_R; p.position.z = rnd(-FIELD_R, FIELD_R); p.position.y = rnd(0.1, 3.5); }
+          });
+        }
+        // 🌋 volcano: eruption blobs, smoke plume, rising embers, pulsing lava (volcano biome only)
+        if (G.volcanoDecor && G.volcanoDecor.visible) {
+          if (G.volcanoEruptBlobs) G.volcanoEruptBlobs.forEach((b) => {
+            b.userData.t += dt * 0.5;
+            if (b.userData.t > 1) { b.userData.t = 0; b.userData.vy = rnd(2.5, 5); b.userData.vx = rnd(-2, 2); b.userData.vz = rnd(-2, 2); }
+            const tt2 = b.userData.t;
+            b.position.set(b.userData.vx * tt2 * 2, b.userData.base + b.userData.vy * tt2 - tt2 * tt2 * 9, b.userData.vz * tt2 * 2);
+            b.material.opacity = 1 - tt2; b.material.transparent = true;
+          });
+          if (G.volcanoSmoke) G.volcanoSmoke.forEach((sm) => {
+            sm.userData.t += dt * sm.userData.sp * 0.3;
+            if (sm.userData.t > 1) sm.userData.t = 0;
+            const tt2 = sm.userData.t;
+            sm.position.set(Math.sin(tt2 * 4) * 1.2, 9 + tt2 * 6, Math.cos(tt2 * 3) * 1.2);
+            sm.material.opacity = 0.5 * (1 - tt2); sm.scale.setScalar(1 + tt2 * 1.5);
+          });
+          if (G.volcanoEmbers) G.volcanoEmbers.forEach((e) => {
+            e.position.y += e.userData.rise * dt;
+            e.position.x += Math.sin(t * 2 + e.userData.sway) * 0.01;
+            if (e.position.y > 3.5) { e.position.y = 0.2; e.position.x = rnd(-FIELD_R, FIELD_R); e.position.z = rnd(-FIELD_R, FIELD_R); }
+          });
+          if (G.volcanoCraterLight) G.volcanoCraterLight.intensity = 2.5 + Math.sin(t * 4) * 0.8;
+          if (G.lavaPools) G.lavaPools.forEach((p, i) => { p.material.emissiveIntensity = 1.1 + Math.sin(t * 3 + i) * 0.4; });
+        }
+        // 💎 cave crystals pulse/flicker softly
+        if (G.caveDecor && G.caveDecor.visible && G.caveLights) {
+          G.caveLights.forEach((L, i) => { L.intensity = (L.userData && L.userData.base || 1) * (0.75 + Math.sin(t * 2.5 + i * 1.3) * 0.25); });
+        }
+        // 🌨️ falling snow (snow biome only)
+        if (G.snowDecor && G.snowDecor.visible && G.snowFlakes) {
+          G.snowFlakes.forEach((f) => {
+            f.position.y -= f.userData.fall * dt;                          // fall down
+            f.position.x += Math.sin(t * 1.5 + f.userData.sway) * f.userData.drift * dt; // gentle drift
+            if (f.position.y < 0.1) { f.position.y = rnd(4, 6); f.position.x = rnd(-FIELD_R, FIELD_R); f.position.z = rnd(-FIELD_R, FIELD_R); }
+          });
+        }
+      }
+
+      if (G.mode === "create") {
+        // 🎀 turntable preview in the character creator
+        char.rotation.y += dt * 0.55;
+        char.position.y = Math.sin(t * 2) * 0.03;
+        headG.rotation.z = Math.sin(t * 0.9) * 0.04;
+      } else if (G.mode === "explore") {
+        // ---------- ⏰ random event scheduler ----------
+        if (!G.event) {
+          G.eventT -= dt;
+          if (G.eventT <= 0) {
+            G.eventT = 45 + Math.random() * 30; // next one later
+            const roll2 = Math.random();
+            startEvent(roll2 < 0.34 ? "meteor" : roll2 < 0.67 ? "horde" : "golden");
+          }
+        } else {
+          G.event.t += dt;
+          const left = Math.ceil(G.event.dur - G.event.t);
+          if (left !== G.event.shownLeft) {
+            G.event.shownLeft = left;
+            setUi((u) => ({ ...u, eventLeft: Math.max(0, left) }));
+          }
+          if (G.event.t >= G.event.dur) endEvent();
+          else if (G.event.type === "meteor") {
+            G.event.spawnT += dt;
+            if (G.event.spawnT > 5.5 && meteors.length < 10) {
+              G.event.spawnT = 0;
+              spawnMeteor();
+            }
+          } else if (G.event.type === "horde") {
+            if (!wilds.some((m) => m.userData.horde)) {
+              toast("🏆 กวาดล้างฝูงมอนสเตอร์หมดเกลี้ยง!");
+              endEvent();
+            }
+          } else if (G.event.type === "golden" && G.event.mesh) {
+            if (!wilds.includes(G.event.mesh)) { G.event.mesh = null; endEvent(); }
+          }
+        }
+        // ☄️ meteor crystals: fall, land, collect
+        for (let i = meteors.length - 1; i >= 0; i--) {
+          const mt = meteors[i];
+          if (!mt.userData.landed) {
+            mt.position.y -= 9 * dt;
+            mt.userData.gem.rotation.y = t * 6;
+            if (mt.position.y <= 0.35) {
+              mt.position.y = 0.35;
+              mt.userData.landed = true;
+              mt.userData.trail.visible = false;
+              burst(mt.position, 0x9adcf5, 0.5);
+            }
+          } else {
+            mt.userData.age += dt;
+            mt.userData.gem.rotation.y = t * 2;
+            mt.visible = mt.userData.age < 16 ? true : Math.sin(t * 12) > -0.3;
+            if (mt.userData.age > 20) { scene.remove(mt); meteors.splice(i, 1); continue; }
+            const dd2 = Math.hypot(mt.position.x - char.position.x, mt.position.z - char.position.z);
+            if (dd2 < 0.85) {
+              const r3 = Math.random();
+              const rar3 = r3 < 0.03 ? "secret" : r3 < 0.25 ? "epic" : r3 < 0.6 ? "rare" : "common";
+              const pool3 = LOOT.filter((x) => x.rarity === rar3 && !x.starter && (x.slot !== "weapon" || !x.cls || x.cls === G.cls));
+              const it3 = pool3[Math.floor(Math.random() * pool3.length)];
+              G.inv.push(it3.id);
+              G.gold += 10;
+              burst(mt.position, 0x9adcf5, 0.8);
+              toast(`☄️ ${it3.emoji} ${it3.name} (${RARITY[rar3].name}) +10💰`);
+              questProgress("collect", 1); // 📜
+              scene.remove(mt);
+              meteors.splice(i, 1);
+              syncPlayer();
+            }
+          }
+        }
+        // 🗼 portal: swirl + entry prompt
+        pSwirl.rotation.z = t * 3;
+        pRing.rotation.z = -t * 0.8;
+        // 🌀 warp pad: spin + proximity to open map picker
+        warpRing.rotation.z = t * 1.5;
+        warpGlow.material.opacity = 0.4 + Math.sin(t * 3) * 0.15;
+        {
+          const wd = Math.hypot(char.position.x - warp.position.x, char.position.z - warp.position.z);
+          if (wd < 1.7 && !G.warpShy && !G.warpAskShown) {
+            G.warpAskShown = true;
+            setUi((u) => ({ ...u, warpAsk: true }));
+          }
+          if (wd > 2.9) { G.warpShy = false; G.warpAskShown = false; if (G.uiWarpAsk) { setUi((u) => ({ ...u, warpAsk: false })); G.uiWarpAsk = false; } }
+          else if (wd < 1.7) G.uiWarpAsk = true;
+        }
+        // 🎣 pond: animate water + proximity prompt + fishing state machine
+        if (G.pondWater) G.pondWater.material.opacity = 0.8 + Math.sin(t * 2) * 0.08;
+        // 👤 NPC: bob the marker + proximity
+        if (G.npc) {
+          if (G.npc.userData.mark) { G.npc.userData.mark.position.y = 2.1 + Math.sin(t * 3) * 0.12; }
+          const nd = Math.hypot(char.position.x - G.npcPos.x, char.position.z - G.npcPos.z);
+          const near = nd < 1.9;
+          if (near !== G.npcNear) { G.npcNear = near; setUi((u) => ({ ...u, npcNear: near })); }
+        }
+        if (G.pondPos) {
+          const fd = Math.hypot(char.position.x - G.pondPos.x, char.position.z - G.pondPos.z);
+          const near = fd < 3.4;
+          if (near !== G.pondNear) {
+            G.pondNear = near;
+            setUi((u) => ({ ...u, pondNear: near }));
+          }
+          if (!near && G.fishing) G.stopFishing();
+        }
+        if (G.fishing) {
+          const f = G.fishing;
+          f.t += dt;
+          if (f.phase === "waiting" && f.t >= f.bite) {
+            f.phase = "bite";
+            f.t = 0;
+            f.window = 1.1; // reaction window
+            if (G.sfx) G.sfx.reel();
+            setUi((u) => ({ ...u, fishing: { phase: "bite" } }));
+          } else if (f.phase === "bite" && f.t >= f.window) {
+            // missed the window
+            G.fishing = null;
+            setUi((u) => ({ ...u, fishing: null }));
+            toast("🐟 ปลาหลุด! ช้าไปนิด");
+          }
+        }
+        {
+          const pd = Math.hypot(char.position.x - portal.position.x, char.position.z - portal.position.z);
+          if (pd < 1.6 && !G.portalShy && !G.dungeonAskShown) {
+            G.dungeonAskShown = true;
+            setUi((u) => ({ ...u, dungeonAsk: true, dungeonProgress: G.dungeonProgress || 1 }));
+          }
+          if (pd > 2.8) { G.portalShy = false; G.dungeonAskShown = false; if (G.uiDungeonAsk) { setUi((u) => ({ ...u, dungeonAsk: false })); G.uiDungeonAsk = false; } }
+          else if (pd < 1.6) G.uiDungeonAsk = true;
+        }
+
+        // 💾 autosave every few seconds
+        G.saveT = (G.saveT || 0) + dt;
+        if (G.achStats) G.achStats.playSec = (G.achStats.playSec || 0) + dt; // ⏱️ playtime
+        if (G.saveT > 4) { G.saveT = 0; saveGame(); }
+
+        // HP regen
+        if (G.player.hp < effMaxHp()) {
+          G.player.hp = Math.min(effMaxHp(), G.player.hp + 2.5 * dt);
+          regenAcc += dt;
+          if (regenAcc > 1) { regenAcc = 0; syncPlayer(); }
+        }
+
+        // 🤖 auto-hunt: walk to targets on her own (events first, then monsters)
+        const manualInput =
+          Math.abs(G.joy.x) > 0.12 || Math.abs(G.joy.y) > 0.12 ||
+          G.keys["arrowup"] || G.keys["w"] || G.keys["arrowdown"] || G.keys["s"] ||
+          G.keys["arrowleft"] || G.keys["a"] || G.keys["arrowright"] || G.keys["d"];
+        if (G.auto && !manualInput) {
+          // top up HP before charging in
+          if (G.player.hp < effMaxHp() * 0.4 && G.potions > 0) G.usePotion();
+          G.huntT = (G.huntT || 0) + dt;
+          if (G.huntT > 0.35) { // re-aim often since things move & wander
+            G.huntT = 0;
+            const avoidBoss = G.player.hp < effMaxHp() * 0.6; // too risky when hurt
+            let target = null;
+
+            // 1) ☄️ grab landed meteor crystals nearby (free loot!)
+            let mBest = null, mbd = Infinity;
+            meteors.forEach((mt) => {
+              if (!mt.userData.landed) return;
+              const d = Math.hypot(mt.position.x - char.position.x, mt.position.z - char.position.z);
+              if (d < mbd) { mbd = d; mBest = mt; }
+            });
+            if (mBest) target = { x: mBest.position.x, z: mBest.position.z };
+
+            // 2) 🌟 chase the golden monster (short-lived jackpot) — top priority
+            const golden = wilds.find((m) => m.userData.golden && m.userData.shy <= 0);
+            if (golden) target = { x: golden.position.x, z: golden.position.z };
+
+            // 3) otherwise hunt the nearest monster
+            if (!target) {
+              let best = null, bd = Infinity;
+              wilds.forEach((m) => {
+                if (m.userData.shy > 0) return;
+                if (avoidBoss && m.userData.boss) return;
+                const d = Math.hypot(m.position.x - char.position.x, m.position.z - char.position.z);
+                if (d < bd) { bd = d; best = m; }
+              });
+              if (best) target = { x: best.position.x, z: best.position.z };
+            }
+
+            if (target) {
+              // 🌳 obstacle avoidance: if a collider blocks the straight path, steer around it
+              const tvx = target.x - char.position.x, tvz = target.z - char.position.z;
+              const tdist = Math.hypot(tvx, tvz) || 1;
+              const nx = tvx / tdist, nz = tvz / tdist;
+              let block = null, blockD = Infinity;
+              for (const c of activeColliders()) {
+                const cvx = c.x - char.position.x, cvz = c.z - char.position.z;
+                const along = cvx * nx + cvz * nz; // projection onto path direction
+                if (along <= 0.2 || along > tdist) continue; // behind us or past the target
+                const perp = Math.abs(cvx * -nz + cvz * nx); // sideways distance from the path line
+                if (perp < c.r + 0.7 && along < blockD) { blockD = along; block = { c, cvx, cvz, nx, nz }; }
+              }
+              if (block) {
+                // sidestep: aim to the left/right of the blocking obstacle
+                const side = (block.cvx * -block.nz + block.cvz * block.nx) > 0 ? -1 : 1;
+                const px = -block.nz * side, pz = block.nx * side;
+                const wp = block.c.r + 1.1;
+                G.moveTarget = new THREE.Vector3(
+                  block.c.x + px * wp, 0, block.c.z + pz * wp
+                );
+              } else {
+                G.moveTarget = new THREE.Vector3(target.x, 0, target.z);
+              }
+            }
+          }
+        }
+
+        // ---------- smooth physics-based locomotion ----------
+        let dx = 0, dz = 0;
+        if (Math.abs(G.joy.x) > 0.12 || Math.abs(G.joy.y) > 0.12) {
+          dx = G.joy.x; dz = G.joy.y;
+          G.moveTarget = null;
+        } else {
+          if (G.keys["arrowup"] || G.keys["w"]) dz -= 1;
+          if (G.keys["arrowdown"] || G.keys["s"]) dz += 1;
+          if (G.keys["arrowleft"] || G.keys["a"]) dx -= 1;
+          if (G.keys["arrowright"] || G.keys["d"]) dx += 1;
+          if (dx || dz) G.moveTarget = null;
+          else if (G.moveTarget) {
+            const tx = G.moveTarget.x - char.position.x;
+            const tz = G.moveTarget.z - char.position.z;
+            const dist = Math.hypot(tx, tz);
+            if (dist < 0.12) G.moveTarget = null;
+            else {
+              const ease = Math.min(1, dist / 0.7); // decelerate smoothly on arrival
+              dx = (tx / dist) * ease;
+              dz = (tz / dist) * ease;
+            }
+          }
+        }
+        const speed = effSpd(); // base 3.4, boosted by shoes ⚡
+        // desired velocity
+        let inLen = Math.hypot(dx, dz);
+        // 🌳 auto-steer: if an obstacle is ahead, curve the walk direction to slide around it
+        if (inLen > 0.01) {
+          let ndx = dx / inLen, ndz = dz / inLen;
+          for (const c of activeColliders()) {
+            const cvx = c.x - char.position.x, cvz = c.z - char.position.z;
+            const cd = Math.hypot(cvx, cvz);
+            const reach = c.r + 1.4; // start avoiding a bit before contact
+            if (cd > reach || cd < 0.0001) continue;
+            const cnx = cvx / cd, cnz = cvz / cd;
+            const facing = ndx * cnx + ndz * cnz; // heading toward this obstacle?
+            if (facing <= 0.1) continue; // not walking into it
+            // tangent: pick the side we're already leaning toward
+            const cross = ndx * cnz - ndz * cnx;
+            const side = cross >= 0 ? 1 : -1;
+            const tx = cnz * side, tz = -cnx * side; // perpendicular (tangent) direction
+            // blend more toward the tangent the closer/more head-on we are
+            const urgency = facing * (1 - (cd - c.r) / (reach - c.r));
+            const w = Math.min(1, Math.max(0, urgency)) * 1.3;
+            ndx += tx * w; ndz += tz * w;
+            // also push slightly outward so we don't scrape the edge
+            ndx -= cnx * w * 0.3; ndz -= cnz * w * 0.3;
+          }
+          const nl = Math.hypot(ndx, ndz) || 1;
+          dx = ndx / nl; dz = ndz / nl;
+          inLen = 1; // keep full speed while steering
+        }
+        const wantX = inLen > 0 ? (dx / Math.max(inLen, 1)) * Math.min(1, inLen) * speed : 0;
+        const wantZ = inLen > 0 ? (dz / Math.max(inLen, 1)) * Math.min(1, inLen) * speed : 0;
+        // inertia: accelerate / decelerate instead of snapping
+        G.vel = G.vel || { x: 0, z: 0 };
+        const accel = Math.min(1, dt * (inLen > 0 ? 9 : 12)); // stops a touch quicker than it starts
+        G.vel.x += (wantX - G.vel.x) * accel;
+        G.vel.z += (wantZ - G.vel.z) * accel;
+        char.position.x += G.vel.x * dt;
+        char.position.z += G.vel.z * dt;
+        const spd = Math.hypot(G.vel.x, G.vel.z);
+        const moveAmt = Math.min(1, spd / 3.4); // 0..1 blend between idle & full stride
+        if (spd > 0.25) yaw = Math.atan2(G.vel.x, G.vel.z);
+
+        const rr = Math.hypot(char.position.x, char.position.z);
+        if (rr > FIELD_R - 0.3) { char.position.x *= (FIELD_R - 0.3) / rr; char.position.z *= (FIELD_R - 0.3) / rr; }
+        pushOut(char, 0.45); // can't walk through trees/buildings
+
+        // facing with a lean into turns
+        let d = yaw - char.rotation.y;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        const turn = d * Math.min(1, dt * 9);
+        char.rotation.y += turn;
+        char.rotation.z += (-turn * 2.4 * moveAmt - char.rotation.z) * Math.min(1, dt * 7);
+
+        // stride synced to actual ground speed → feet never slide
+        G.walkPhase = (G.walkPhase || 0) + spd * dt * 3.1;
+        const swing = Math.sin(G.walkPhase);
+        const swing2 = Math.sin(G.walkPhase + Math.PI);
+        legL.rotation.x = swing * 0.8 * moveAmt;
+        legR.rotation.x = swing2 * 0.8 * moveAmt;
+        armR.rotation.x = G.cls === "mage" ? -0.9 + swing * 0.12 * moveAmt : swing * 0.55 * moveAmt; // 🔮 mage book arm sways a touch
+        armL.rotation.x = G.cls === "mage" ? -1.35 + swing2 * 0.14 * moveAmt : swing2 * 0.55 * moveAmt; // 🔮 orb arm sways gently, keeps the cradle pose
+        if (G.cls === "archer") {
+          // 🏹 sling the bow across the back while roaming (diagonal, behind the torso)
+          wand.position.set(-0.15, -0.4, -0.5);      // move up & behind the shoulder
+          wand.rotation.set(0.3, -Math.PI / 2, Math.PI / 4); // diagonal like a slung bow
+        }
+        if (G.cls === "lancer") {
+          // 🔱 rest the trident on the shoulder while roaming (arm up, spear tilted back)
+          armR.rotation.x = -0.5 + swing * 0.1 * moveAmt; // raise the arm to shoulder the shaft
+          armR.rotation.z = -0.35;
+          wand.position.set(0.12, -0.2, -0.15);           // shaft sits against the shoulder
+          wand.rotation.set(-0.5, 0, 0.35);               // tilt back over the shoulder
+        }
+        // grounded bounce blends into idle breathing
+        char.position.y = Math.abs(swing) * 0.07 * moveAmt + Math.sin(t * 2) * 0.03 * (1 - moveAmt);
+        // torso counter-sway + natural head motion
+        torso.rotation.z += (swing * 0.04 * moveAmt - torso.rotation.z) * Math.min(1, dt * 10);
+        headG.rotation.z = Math.sin(G.walkPhase * 0.5) * 0.05 * moveAmt + Math.sin(t * 0.9) * 0.035 * (1 - moveAmt);
+        headG.rotation.y += (Math.sin(t * 0.6) * 0.22 * (1 - moveAmt) - headG.rotation.y) * Math.min(1, dt * 3);
+        // hair trails behind the motion (strand sway handled by hairSwayParts)
+        const hairSway = Math.sin(G.walkPhase - 0.7) * 0.14 * moveAmt - moveAmt * 0.12;
+        hairBack.rotation.x += (hairSway * 0.4 - hairBack.rotation.x) * Math.min(1, dt * 6);
+
+        // buddy follows with its own inertia
+        if (buddyMesh) {
+          const behind = new THREE.Vector3(
+            char.position.x - Math.sin(char.rotation.y) * 1.1,
+            0,
+            char.position.z - Math.cos(char.rotation.y) * 1.1
+          );
+          buddyMesh.position.x += (behind.x - buddyMesh.position.x) * Math.min(1, dt * 4);
+          buddyMesh.position.z += (behind.z - buddyMesh.position.z) * Math.min(1, dt * 4);
+          const bd = Math.atan2(char.position.x - buddyMesh.position.x, char.position.z - buddyMesh.position.z);
+          let bdd = bd - buddyMesh.rotation.y;
+          while (bdd > Math.PI) bdd -= Math.PI * 2;
+          while (bdd < -Math.PI) bdd += Math.PI * 2;
+          buddyMesh.rotation.y += bdd * Math.min(1, dt * 6);
+          buddyMesh.userData.body.position.y = (FLOATY[buddyMesh.userData.spId] ? 0.95 : 0.5) + Math.abs(Math.sin(t * 5)) * 0.07;
+        }
+
+        // encounter check
+        for (const m of wilds) {
+          if (m.userData.shy > 0) continue;
+          const dd = Math.hypot(m.position.x - char.position.x, m.position.z - char.position.z);
+          if (dd < 0.95) { startBattle(m); break; }
+        }
+      } else if (G.mode === "battle" && G.enemy) {
+        // 🤖 auto battle: decide after a short beat whenever it's our turn
+        if (G.auto && !G.banim) {
+          G.autoT = (G.autoT || 0) + dt;
+          if (G.autoT > 0.9) { G.autoT = 0; autoDecide(); }
+        } else G.autoT = 0;
+
+        const em = G.enemy.mesh;
+        // idle bounce for both
+        em.userData.body.position.y = (FLOATY[em.userData.spId] ? 0.95 : 0.5) + Math.abs(Math.sin(t * 4)) * 0.06;
+        if (em.userData.star) em.userData.star.rotation.y = t * 3;
+        // 🐲 pulsing rage aura in phase 2
+        if (G.enemy.rageAura) {
+          G.enemy.rageAura.rotation.z = t * 2;
+          G.enemy.rageAura.material.opacity = 0.4 + Math.abs(Math.sin(t * 5)) * 0.35;
+          G.enemy.rageAura.scale.setScalar(1 + Math.sin(t * 4) * 0.1);
+        }
+        char.position.y = Math.sin(t * 2.5) * 0.03;
+        // 🏹 archer battle-ready stance while waiting: hold the bow at a diagonal
+        if (G.cls === "archer" && !G.banim) {
+          wand.position.set(0.02, -1.05, 0.12); // back to the palm for battle
+          wand.rotation.set(0, -Math.PI / 2, 0); // 🏹 upright, string turned toward the archer
+          armR.rotation.x = -0.7 + Math.sin(t * 2) * 0.03; // bow arm raised, gentle breathing
+          armR.rotation.z = 0.12;
+          armL.rotation.x = -0.5;
+          armL.rotation.z = -0.12;
+        }
+        // 🔱 lancer battle-ready: bring the trident back into the hand (undo the shoulder carry)
+        if (G.cls === "lancer" && !G.banim) {
+          const grip = gripFor(curWeapon);
+          wand.position.set(0.02, -1.05, 0.12);
+          wand.rotation.set(grip.x, grip.y, grip.z);
+          armR.rotation.x = -0.2 + Math.sin(t * 2) * 0.03;
+          armR.rotation.z = 0.12;
+        }
+        if (buddyMesh) {
+          buddyMesh.userData.body.position.y = (FLOATY[buddyMesh.userData.spId] ? 0.95 : 0.5) + Math.abs(Math.sin(t * 5)) * 0.06;
+        }
+
+        // battle animations
+        if (G.banim) {
+          const A = G.banim;
+          A.t += dt * (G.battleSpeed || 1); // ⏩ speed toggle
+          let p = Math.min(1, A.t / A.dur);
+          if (A.type === "playerAttack") {
+            const cls = G.cls || "warrior";
+            const skFx = A.skill ? A.skill.fx : null;
+            const hitP = A.chargeSkill ? 0.755 : cls === "warrior" ? 0.5 : cls === "assassin" ? 0.45 : 0.6;
+            if (cls === "warrior") {
+              if (skFx === "quake") {
+                // 🌍 leap up and slam down
+                const jump = Math.sin(p * Math.PI) * 0.8;
+                char.position.x = battleCenter.x - 1.3 + Math.sin(p * Math.PI) * 0.6;
+                char.position.y = p < 0.5 ? jump : Math.max(0, 0.8 - (p - 0.5) * 3.2);
+                armR.rotation.z = 0.12 + Math.sin(p * Math.PI) * 2.2;
+              } else if (skFx === "rage") {
+                // 🔥 wild multi-swing frenzy
+                char.position.x = battleCenter.x - 1.3 + Math.sin(p * Math.PI) * 1.3;
+                armR.rotation.z = 0.12 + Math.sin(p * Math.PI * 4) * 1.8;
+              } else if (skFx === "bash") {
+                // 🛡️ shield shove forward
+                char.position.x = battleCenter.x - 1.3 + Math.sin(p * Math.PI) * 1.0;
+                armL.rotation.z = -0.12 - Math.sin(p * Math.PI) * 1.4;
+                armR.rotation.z = 0.12 + Math.sin(p * Math.PI) * 0.5;
+              } else {
+                // default heavy lunge + sword swing
+                const lunge = Math.sin(p * Math.PI) * 1.2;
+                char.position.x = battleCenter.x - 1.3 + lunge;
+                armR.rotation.z = 0.12 + Math.sin(p * Math.PI) * 1.9;
+              }
+            } else if (cls === "assassin") {
+              const skId = A.skill ? A.skill.id : null;
+              if (skId === "s_shadow") {
+                // 🌑 ลอบสังหาร — vanish, reappear BEHIND the enemy, strike, blink back
+                const ex = battleCenter.x + (G.enemyX || 1.3);
+                if (p < 0.3) {
+                  // fade/shrink away in place
+                  const vp = p / 0.3;
+                  char.scale.setScalar(1 - vp * 0.9);
+                  char.position.x = battleCenter.x - 1.3;
+                } else if (p < 0.7) {
+                  // 👤 appear behind the enemy, low crouch, strike
+                  const sp2 = (p - 0.3) / 0.4;
+                  char.scale.setScalar(Math.min(1, sp2 * 3));
+                  char.position.x = ex + 0.9; // behind the enemy
+                  char.rotation.y = -Math.PI / 2; // facing back at it
+                  armR.rotation.z = 0.12 + Math.sin(sp2 * Math.PI) * 2.0; // big stab
+                  armL.rotation.z = -0.12 - Math.sin(sp2 * Math.PI) * 1.4;
+                } else {
+                  // blink back to position
+                  const bp2 = (p - 0.7) / 0.3;
+                  char.scale.setScalar(bp2 < 0.4 ? 1 - bp2 : Math.min(1, bp2));
+                  char.position.x = battleCenter.x - 1.3;
+                  char.rotation.y = Math.PI / 2;
+                }
+              } else if (skId === "s_double") {
+                // 🗡️🩸 รัวมีดคู่ — dash in, furious alternating dual stabs
+                const dash = Math.min(1, p * 2.5) * 1.6;
+                char.position.x = battleCenter.x - 1.3 + dash - (p > 0.8 ? (p - 0.8) * 8 : 0);
+                armR.rotation.x = Math.abs(Math.sin(p * Math.PI * 6)) * 1.5; // rapid forward stabs
+                armL.rotation.x = Math.abs(Math.sin(p * Math.PI * 6 + Math.PI)) * 1.5;
+                armR.rotation.z = 0.3; armL.rotation.z = -0.3;
+                char.rotation.z = Math.sin(p * Math.PI * 6) * 0.06;
+              } else if (skId === "s_poison") {
+                // ☠️ มีดอาบยาพิษ — stand back and hurl 3 poison knives
+                char.position.x = battleCenter.x - 1.5;
+                const throwP = Math.min(1, p * 1.4);
+                armR.rotation.z = 0.12 + Math.abs(Math.sin(throwP * Math.PI * 3)) * 2.2; // 3 overhand throws
+                char.rotation.z = Math.sin(throwP * Math.PI * 3) * 0.12;
+              } else if (skId === "s_evade") {
+                // 💨 ระบำเงา — blur left-right, slashing on every pass (after-image flicker)
+                const side = Math.sin(p * Math.PI * 8); // fast left-right
+                char.position.x = battleCenter.x - 0.6 + side * 0.9;
+                char.position.z = battleCenter.z + Math.cos(p * Math.PI * 8) * 0.25;
+                char.rotation.z = side * 0.2;
+                armR.rotation.z = 0.12 + Math.abs(side) * 1.6;
+                armL.rotation.z = -0.12 - Math.abs(Math.cos(p * Math.PI * 8)) * 1.6;
+                // flicker like a shadow after-image
+                char.visible = Math.sin(p * Math.PI * 24) > -0.6;
+                if (p >= 0.97) { char.visible = true; char.position.z = battleCenter.z; }
+              } else {
+                // 🗡️ quick dash-in, alternating dagger stabs, dash back
+                const dash = Math.sin(p * Math.PI) * 1.6;
+                char.position.x = battleCenter.x - 1.3 + dash;
+                armR.rotation.z = 0.12 + Math.sin(p * Math.PI * 3) * 1.3;
+                armL.rotation.z = -0.12 - Math.sin(p * Math.PI * 3 + Math.PI) * 1.3;
+              }
+            } else if (cls === "lancer") {
+              const skId = A.skill ? A.skill.id : null;
+              { const grip = gripFor(curWeapon); wand.position.set(0.02, -1.05, 0.12); wand.rotation.set(grip.x, grip.y, grip.z); } // 🔱 trident in hand
+              char.position.x = battleCenter.x - 1.3; // 🔱 stand still, only the spear moves
+              const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+              const easeIn = (x) => x * x * x;
+              if (skId === "l_sweep") {
+                // 🌪️ กวาดหอก — wide HORIZONTAL arc, spear held low & level, sweeps side to side
+                armR.rotation.z = 1.3;                       // arm out to the side (blade horizontal)
+                armR.rotation.y = Math.sin(p * Math.PI * 3) * 1.4; // big left-right sweep
+                armR.rotation.x = 0.2;
+                char.rotation.z = Math.sin(p * Math.PI * 3) * 0.14; // torso whips with the sweep
+              } else if (skId === "l_quake") {
+                // 🌍 หอกปฐพี — raise the spear straight overhead, then SLAM it down into the ground
+                if (p < 0.4) {
+                  const w = easeOut(p / 0.4);
+                  armR.rotation.z = 0.12 + w * 2.9;          // lift high overhead
+                  armR.rotation.x = -w * 0.3;
+                  char.rotation.z = w * 0.18;                // lean back to wind up
+                } else {
+                  const s = easeIn((p - 0.4) / 0.6);
+                  armR.rotation.z = 3.02 - s * 4.0;          // slam straight down
+                  char.rotation.z = 0.18 - s * 0.42;         // whole body drops into the slam
+                  char.position.y = Math.sin(Math.min(1, s * 1.4) * Math.PI) * -0.1;
+                }
+              } else if (skId === "l_charge") {
+                // 💥 พุ่งทะยาน — coil the spear far back, then ONE explosive forward thrust
+                if (p < 0.45) {
+                  const w = easeIn(p / 0.45);
+                  armR.rotation.x = -1.3 * w;                // draw the spear back past the shoulder
+                  armR.rotation.z = 0.12 - 0.3 * w;
+                  char.rotation.z = -0.2 * w;                // coil the body back
+                  char.position.x = battleCenter.x - 1.3 - w * 0.2;
+                } else {
+                  const s = easeOut((p - 0.45) / 0.55);
+                  armR.rotation.x = -1.3 + s * 2.5;          // EXPLODE forward — long piercing thrust
+                  armR.rotation.z = 0.12 - 0.3 + s * 0.3;
+                  char.rotation.z = -0.2 + s * 0.44;         // drive the whole body forward
+                  char.position.x = (battleCenter.x - 1.5) + s * 0.9;
+                }
+              } else {
+                // 🔱 l_thrust — rapid straight FORWARD jabs (arm pistons in and out)
+                const jab = Math.abs(Math.sin(p * Math.PI * 4)); // 4 quick jabs
+                armR.rotation.x = jab * 1.4;                 // thrust forward, not up
+                armR.rotation.z = 0.12 + jab * 0.15;
+                char.rotation.z = jab * 0.1;
+              }
+            } else if (cls === "samurai") {
+              const skId = A.skill ? A.skill.id : null;
+              char.position.x = battleCenter.x - 1.3; // ⚔️ stand firm, only the body & katana move
+              const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+              const easeIn = (x) => x * x * x;
+              if (skId === "k_double") {
+                // 🌸 rapid HORIZONTAL flurry — flat sideways slashes, blade held level
+                const n = Math.sin(p * Math.PI * 5); // 2-3 quick sideways cuts
+                armR.rotation.z = 1.4;               // arm held out to the side
+                armR.rotation.y = n * 1.3;           // sweep left-right (horizontal plane)
+                armR.rotation.x = 0.3;
+                char.rotation.z = n * 0.12;          // torso twists with each cut
+              } else if (skId === "k_iai") {
+                // ⚡ IAI — long still crouch (blade sheathed low & back), then ONE explosive flash
+                if (p < 0.6) {
+                  const w = easeIn(p / 0.6);
+                  armR.rotation.z = 0.12 - 1.1 * w;  // sink the sheathed blade low
+                  armR.rotation.x = -0.9 * w;        // draw hand far back
+                  armR.rotation.y = -0.5 * w;
+                  char.rotation.z = -0.28 * w;       // deep coil
+                  char.position.y = -0.12 * w;       // low crouch
+                } else {
+                  const s = easeOut((p - 0.6) / 0.4);
+                  armR.rotation.z = -1.0 + s * 4.2;  // SNAP straight up across the body
+                  armR.rotation.x = -0.9 + s * 1.4;
+                  armR.rotation.y = -0.5 + s * 0.5;
+                  char.rotation.z = -0.28 + s * 0.6; // uncoil, explode upward
+                  char.position.y = -0.12 + s * 0.12;
+                }
+              } else if (skId === "k_moon") {
+                // 🌙 huge slow OVERHEAD vertical crescent — raise fully overhead, cleave straight down
+                if (p < 0.45) {
+                  const w = easeOut(p / 0.45);
+                  armR.rotation.z = 0.12 + w * 3.0;  // lift high overhead
+                  armR.rotation.x = -w * 0.4;        // blade behind the head
+                  char.rotation.z = w * 0.2;         // lean way back
+                } else {
+                  const s = easeIn((p - 0.45) / 0.55);
+                  armR.rotation.z = 3.12 - s * 4.2;  // cleave all the way down past the knees
+                  armR.rotation.x = -0.4 + s * 0.8;
+                  char.rotation.z = 0.2 - s * 0.5;   // whole body drives the cut down
+                }
+              } else {
+                // ⚔️ k_slash — a single crisp DIAGONAL draw-cut (upper-right to lower-left)
+                if (p < 0.28) {
+                  const w = easeOut(p / 0.28);
+                  armR.rotation.z = 0.12 + w * 1.4;  // raise to upper-right guard
+                  armR.rotation.x = -w * 0.6;
+                  char.rotation.z = -0.16 * w;
+                } else {
+                  const s = easeOut((p - 0.28) / 0.72);
+                  armR.rotation.z = 1.52 - s * 2.9;  // slash down diagonally
+                  armR.rotation.x = -0.6 + s * 1.1;
+                  char.rotation.z = -0.16 + s * 0.4; // follow through with the shoulders
+                }
+              }
+            } else if (cls === "archer") {
+              const skId = A.skill ? A.skill.id : null;
+              char.position.x = battleCenter.x - 1.3;
+              char.rotation.y = Math.PI / 2 - 0.35; // ↩️ turn side-on to the target, archer's stance
+              wand.position.set(0.02, -1.05, 0.12);
+              wand.rotation.set(Math.PI / 2, -Math.PI / 2, 0); // 🏹 bow perpendicular to the raised arm, string toward archer
+              // 🏹 bow arm (right) held steady, extended forward toward the enemy
+              armR.rotation.x = -1.4;
+              armR.rotation.z = 0.1;
+              // ⚡ charge skills: spawn the electric-charge arrow FX at the very START (it handles arrow + impact visuals)
+              if (A.chargeSkill && !A.fxSpawned) {
+                A.fxSpawned = true;
+                const kindMap = { a_power: "arrowpierce", a_snipe: "arrowsnipe", a_poison: "arrowpoison" };
+                spawnSkillFx(kindMap[skId] || "arrowpierce", em.position, A.skill.color);
+              }
+              // 🏹 draw arm (left) pulls the string back to the cheek, then snaps forward on release
+              const chargeHold = A.chargeSkill ? Math.min(1, A.t / 1.0) : null; // hold the draw through the 1s charge
+              const drawSpeed = skId === "a_snipe" ? 1.4 : 2.0;
+              const drawP = A.chargeSkill ? chargeHold : Math.min(1, p * drawSpeed); // 0→1 draw
+              const released = A.chargeSkill ? A.t >= 1.0 : p >= 0.55;
+              if (!released) {
+                armL.rotation.x = -1.4;                 // raise to match the bow
+                armL.rotation.z = -0.1 - drawP * 0.6;   // pull string back
+                armL.rotation.y = drawP * 0.5;          // elbow draws outward
+              } else {
+                const rp = A.chargeSkill ? Math.min(1, (A.t - 1.0) / 0.4) : (p - 0.55) / 0.45;
+                armL.rotation.x = -1.4 + rp * 0.3;      // snap forward on release
+                armL.rotation.z = -0.7 + rp * 0.6;
+                armL.rotation.y = 0.5 - rp * 0.5;
+              }
+              const flying = !A.chargeSkill && p > 0.15 && p < hitP; // charge skills use the FX arrow instead
+              const fp = (p - 0.15) / (hitP - 0.15);
+              if (A.chargeSkill) { arrowFx.visible = false; multiArrows.forEach((a) => (a.visible = false)); }
+              if (skId === "a_multi") {
+                // 🏹 three arrows in a spread
+                arrowFx.visible = false;
+                const spread = [-0.5, 0, 0.5];
+                multiArrows.forEach((a, i) => {
+                  if (flying) {
+                    a.visible = true;
+                    a.position.set(battleCenter.x - 0.9 + fp * 2.0, 1.45 + spread[i] * (1 - fp), battleCenter.z);
+                    a.rotation.z = spread[i] * 0.4;
+                  } else a.visible = false;
+                });
+              } else if (skId === "a_poison") {
+                // 🐍 green venom arrow with dripping trail
+                multiArrows.forEach((a) => (a.visible = false));
+                if (flying) {
+                  arrowFx.visible = true;
+                  arrowFx.position.set(battleCenter.x - 0.9 + fp * 2.0, 1.45 + Math.sin(fp * Math.PI) * 0.18, battleCenter.z);
+                  arrowFx.children.forEach((c) => c.material && c.material.color && c.material.color.setHex(0x7ac04a));
+                  if (Math.random() < 0.4) burst({ x: arrowFx.position.x, y: arrowFx.position.y, z: arrowFx.position.z }, 0x6ab04a, 0.3);
+                } else arrowFx.visible = false;
+              } else if (skId === "a_power") {
+                // 🎯 single heavy piercing bolt (bigger, faster)
+                multiArrows.forEach((a) => (a.visible = false));
+                if (flying) {
+                  arrowFx.visible = true;
+                  arrowFx.scale.setScalar(1.6);
+                  arrowFx.position.set(battleCenter.x - 0.9 + fp * 2.4, 1.45, battleCenter.z);
+                  arrowFx.children.forEach((c) => c.material && c.material.color && c.material.color.setHex(0x59a0e8));
+                } else { arrowFx.visible = false; arrowFx.scale.setScalar(1); }
+              } else {
+                // 💥 snipe / default single arrow (snipe glints)
+                multiArrows.forEach((a) => (a.visible = false));
+                if (flying) {
+                  arrowFx.visible = true;
+                  arrowFx.position.set(battleCenter.x - 0.9 + fp * 2.0, 1.45 + Math.sin(fp * Math.PI) * 0.18, battleCenter.z);
+                  if (skId === "a_snipe") { arrowFx.scale.setScalar(1 + Math.sin(t * 40) * 0.2); arrowFx.children.forEach((c) => c.material && c.material.color && c.material.color.setHex(0xf5a623)); }
+                } else { arrowFx.visible = false; arrowFx.scale.setScalar(1); }
+              }
+            } else {
+              // mage: raise staff, magic circle glows, orb arcs to target
+              armR.rotation.z = 0.12 + Math.sin(Math.min(p * 2, 1) * Math.PI) * 2.0;
+              magicCircle.visible = true;
+              magicCircle.position.x = battleCenter.x - 1.3;
+              magicCircle.position.z = battleCenter.z;
+              magicCircle.rotation.z = t * 2.5;
+              magicCircle.children[1].rotation.z = -t * 4;
+              if (p > 0.2 && p < hitP) {
+                orbFx.visible = true;
+                const fp = (p - 0.2) / (hitP - 0.2);
+                // bolt strikes instantly (no arc), others arc over
+                const arcY = skFx === "bolt" ? 1.6 : 1.6 + Math.sin(fp * Math.PI) * 0.9;
+                orbFx.position.set(
+                  battleCenter.x - 1.0 + fp * 2.3,
+                  arcY,
+                  battleCenter.z
+                );
+                orbFx.scale.setScalar(1 + Math.sin(t * 20) * 0.15);
+                if (A.skill) orbFx.material.emissive.setHex(A.skill.color);
+                else orbFx.material.emissive.setHex(0x8a3af0);
+              } else orbFx.visible = false;
+            }
+            if (p >= hitP && !A.hitDone) {
+              A.hitDone = true;
+              const roll = () => effAtk() + Math.random() * 4;
+              const sk = A.skill;
+              const rank = sk ? (G.skillRanks[sk.id] || 1) : 1;
+              const clsAmp = cls === "mage" ? 1.15 : 1;
+              let dmg = 0;
+              let fxMsg = "";
+              let critBonus = 0;
+              if (sk) {
+                // 🎯 class skill: damage scales with its rank
+                const mult = sk.mult + sk.perLv * (rank - 1);
+                const hitCount = sk.hits || 1;
+                for (let h = 0; h < hitCount; h++) dmg += roll() * mult;
+                fxMsg = ` ${sk.emoji} ${sk.name} Lv.${rank}`;
+                if (hitCount > 1) fxMsg += ` (${hitCount} ครั้ง)`;
+                // status effects
+                if (sk.burn) { G.est.burn = sk.burn; fxMsg += " เผาไหม้ 🔥"; }
+                if (sk.freeze) { G.est.frozen = true; fxMsg += " แช่แข็ง ❄️"; }
+                if (sk.bleed) { G.est.bleed = (G.est.bleed || 0) + sk.bleed; fxMsg += " เลือดไหล 🩸"; }
+                if (sk.poison) {
+                  G.est.poison = (G.est.poison || 0) + sk.poison; fxMsg += " ติดพิษ ☠️";
+                  // 🟣 the monster turns purple while poisoned
+                  if (em.userData.body) {
+                    em.userData.body.material.emissive = new THREE.Color(0x6a2ad0);
+                    em.userData.body.material.emissiveIntensity = 0.45;
+                    setTimeout(() => { if (em.userData.body && G.enemy) { em.userData.body.material.emissive = new THREE.Color(0x000000); em.userData.body.material.emissiveIntensity = 1; } }, 3000);
+                  }
+                }
+                if (sk.stun && Math.random() < 0.3 + rank * 0.05) { G.est.frozen = true; fxMsg += " มึนงง 💫"; }
+                if (sk.buffDef) { G.battleDef += sk.buffDef; fxMsg += ` ป้องกัน +${sk.buffDef} 🛡️`; }
+                if (sk.buffEva) { G.battleEva = (G.battleEva || 0) + 15; fxMsg += " หลบ +15% 💨"; }
+                if (sk.heal) { const pctHeal = 0.15 + (rank - 1) * 0.03; const hh = Math.round(effMaxHp() * pctHeal); G.player.hp = Math.min(effMaxHp(), G.player.hp + hh); fxMsg += ` ฟื้น +${hh} HP (${Math.round(pctHeal * 100)}%) ✨`; syncPlayer(); }
+                if (sk.rage) { const missing = 1 - G.player.hp / effMaxHp(); dmg *= 1 + missing * 0.8; if (missing > 0.5) fxMsg += " คลั่ง! 🔥"; }
+                if (sk.critBonus) critBonus = sk.critBonus;
+                A.pierce = sk.pierce; // pierce ignores block
+                // ⚡ weakness advantage
+                const skEl = SKILL_ELEM[sk.id];
+                if (skEl && WEAK[G.enemy.spId] === skEl) { dmg *= 1.5; fxMsg += " โดนจุดอ่อน!! ⚡💢"; }
+              } else {
+                // basic attack
+                dmg = roll() * A.mult;
+                const wl = weaponElem();
+                if (wl) {
+                  dmg *= 1.15;
+                  if (WEAK[G.enemy.spId] === wl) { dmg *= 1.5; fxMsg += " โดนจุดอ่อน!! 💢"; }
+                  if (wl === "fire" && Math.random() < 0.3) { G.est.burn = 2; fxMsg += " เผาไหม้ 🔥"; }
+                  else if (wl === "ice" && Math.random() < 0.22) { G.est.frozen = true; fxMsg += " แช่แข็ง ❄️"; }
+                  else if (wl === "dragon") { dmg *= 1.2; if (Math.random() < 0.35) { G.est.burn = 2; fxMsg += " เพลิงมังกร 🐉"; } }
+                }
+                if (cls === "assassin") { dmg += roll(); fxMsg += " แทงสองมีด 🗡️🗡️"; }
+                if (cls === "samurai" && Math.random() < 0.35) { dmg += roll() * 0.8; fxMsg += " ฟันซ้ำ ⚔️⚔️"; } // double-cut chance
+                if (cls === "lancer") { A.pierce = true; dmg += 2; fxMsg += " เจาะเกราะ 🔱"; } // pierce + armor break
+              }
+              // 🎯 critical
+              const critBase = cls === "archer" ? 0.25 : cls === "assassin" ? 0.3 : cls === "samurai" ? 0.22 : 0.05;
+              const critCh = critBase + critBonus + effCrit() / 100;
+              if (Math.random() < critCh) {
+                dmg *= 2;
+                fxMsg += " 🎯 คริติคอล!!";
+                if (G.sfx) G.sfx.crit();
+              }
+              dmg *= clsAmp;
+              dmg = Math.round(dmg);
+              // 🎲 enemy may dodge/block/guard — pierce skills bypass block/guard
+              if (A.pierce) { fxMsg += " เจาะทะลุ! 🎯"; }
+              else { const d2 = enemyDefend(dmg); dmg = d2.dmg; fxMsg += d2.note; }
+              G.enemy.hp = Math.max(0, G.enemy.hp - dmg);
+              // class impact FX
+              const fxColor = sk ? sk.color : CLASSES[cls].color;
+              if (cls === "warrior") fireSlash(em.position, fxColor);
+              else if (cls === "mage") fireShock(em.position, fxColor);
+              else if (cls === "samurai") fireSlash(em.position, fxColor);
+              else if (cls === "lancer") spawnSkillFx("pierce", em.position, fxColor);
+              // ✨ signature skill effect (fire/lightning/ice/poison/shadow/quake…)
+              if (sk && !A.chargeSkill) {
+                let fxKind = "default";
+                if (sk.id === "m_fire") fxKind = "hellfire";        // 🔥 เพลิงนรก
+                else if (sk.id === "w_cleave") fxKind = "crescent";  // 🌙 ฟันวงกว้าง
+                else if (sk.id === "w_bash") fxKind = "shieldbash";  // 🛡️ โล่กระแทก
+                else if (sk.id === "w_rage") fxKind = "crossslash";  // 🔥 คลั่งสงคราม
+                else if (sk.id === "w_quake") fxKind = "earthsplit"; // 🌍 ปฐพีแยก
+                else if (sk.id === "m_ice") fxKind = "icespear";     // ❄️ หอกน้ำแข็ง
+                else if (sk.id === "m_bolt") fxKind = "thunderstorm"; // ⚡ สายฟ้าฟาด
+                else if (sk.id === "m_heal") fxKind = "healbless";   // ✨ แสงเยียวยา
+                else if (sk.id === "a_power") fxKind = "arrowpierce";  // 🎯 ธนูเจาะเกราะ
+                else if (sk.id === "a_snipe") fxKind = "arrowsnipe";   // 💥 ยิงจุดตาย
+                else if (sk.id === "a_multi") fxKind = "arrowmulti";   // 🏹 ยิงสามทิศ
+                else if (sk.id === "a_poison") fxKind = "arrowpoison"; // 🐍 ลูกศรพิษ
+                else if (sk.id === "s_double") fxKind = "bleedstab";    // 🩸 รัวมีดคู่
+                else if (sk.id === "s_poison") fxKind = "poisonknives"; // ☠️ มีดอาบยาพิษ
+                else if (sk.id === "s_evade") fxKind = "shadowdance";   // 💨 ระบำเงา
+                else if (sk.burn) fxKind = "fire";
+                else if (sk.freeze) fxKind = "ice";
+                else if (sk.poison) fxKind = "poison";
+                else if (sk.stun) fxKind = "quake";
+                else if (sk.id === "m_bolt") fxKind = "bolt";
+                else if (sk.id === "s_shadow") fxKind = "shadow";
+                else if (sk.id === "l_thrust" || sk.id === "l_charge") fxKind = "pierce";
+                else if (sk.id === "l_sweep") fxKind = "multi";
+                else if (sk.id === "k_iai") fxKind = "bolt";
+                else if (sk.id === "k_double" || sk.id === "k_slash" || sk.id === "k_moon") fxKind = "snipe";
+                else if (sk.fx === "orb") fxKind = "fire";
+                // ✨ heal casts on the PLAYER, others on the enemy
+                const fxPos = fxKind === "healbless" ? char.position : em.position;
+                spawnSkillFx(fxKind, fxPos, fxColor);
+              }
+              arrowFx.visible = false;
+              orbFx.visible = false;
+              burst(em.position, fxColor);
+              em.userData.body.material.emissive = new THREE.Color(0x661122);
+              setTimeout(() => { if (em.userData.body) em.userData.body.material.emissive = new THREE.Color(0x000000); }, 180);
+              setUi((u) => ({
+                ...u, enemy: { ...u.enemy, hp: G.enemy.hp },
+                msg: `โจมตีเข้าเป้า! -${dmg} HP${fxMsg}`,
+              }));
+            }
+            if (p >= 1) {
+              char.position.x = battleCenter.x - 1.3;
+              char.position.y = 0;
+              char.position.z = battleCenter.z;
+              char.rotation.y = Math.PI / 2;
+              char.rotation.z = 0;
+              char.rotation.y = Math.PI / 2;
+              char.scale.setScalar(1);
+              char.visible = true; // (ระบำเงา flickers visibility)
+              armR.rotation.z = 0.12;
+              armR.rotation.x = G.cls === "archer" ? -1.4 : 0; // 🏹 bow hand steady forward
+              armR.rotation.y = 0;
+              armL.rotation.z = -0.12;
+              armL.rotation.y = 0;
+              armL.rotation.x = G.cls === "mage" ? -1.35 : (G.cls === "archer" ? -1.4 : 0); // 🏹 archer draw hand up
+              arrowFx.visible = false;
+              arrowFx.scale.setScalar(1);
+              arrowFx.children.forEach((c) => { if (c.material && c.material.color) { const orig = c === arrowFx.children[0] ? 0x8a5a2a : c === arrowFx.children[1] ? 0xd8dde5 : 0xe06070; c.material.color.setHex(orig); } });
+              multiArrows.forEach((a) => (a.visible = false));
+              orbFx.visible = false;
+              magicCircle.visible = false;
+              G.banim = null;
+              if (G.enemy.hp <= 0) winBattle();
+              else if (G.buddy && buddyMesh) {
+                // 🐾 pet assist strike!
+                G.banim = { type: "petAttack", t: 0, dur: 0.55 };
+                setUi((u) => ({ ...u, msg: `🐾 ${PET_SKILL[G.buddy]}!` }));
+              } else enemyTurn();
+            }
+          } else if (A.type === "ult") {
+            const cls = G.cls || "warrior";
+            const ultMul = 1 + ((G.ultRank || 1) - 1) * 0.18; // 🌟 higher ult rank = stronger
+            const roll = () => (effAtk() + Math.random() * 4) * ultMul;
+            // 🔮 CAST PHASE: magic-circle wind-up, then a snappy strike
+            // ⚔️ warrior is a melee bruiser — no chanting, straight into the attack
+            const CAST_SEC = (cls === "warrior" || cls === "archer" || cls === "assassin" || cls === "lancer" || cls === "samurai") ? 0 : 1.0;
+            const castP = CAST_SEC > 0 ? Math.min(1, A.t / CAST_SEC) : 1;
+            const casting = A.t < CAST_SEC;
+            // remap post-cast progress so attack motions play at normal speed
+            p = casting ? 0 : Math.min(1, (A.t - CAST_SEC) / (A.dur - CAST_SEC));
+            if (casting) {
+              const cp = castP;
+              magicCircle.visible = true;
+              magicCircle.position.set(battleCenter.x - 0.5, 1.4, battleCenter.z);
+              magicCircle.rotation.x = 0;
+              const stars = magicCircle.userData.stars;
+              stars[0].rotation.z = t * 1.6;
+              stars[1].rotation.z = -t * 2.2;
+              stars[2].rotation.z = t * 3.0;
+              const s = 0.3 + Math.min(1, cp * 1.4) * 1.1;
+              magicCircle.scale.setScalar(s);
+              const ccol = (CLASSES[cls] && CLASSES[cls].color) || 0xb07ae0;
+              stars.forEach((st, si) => st.children.forEach((c) => {
+                c.material.opacity = (0.85 - si * 0.08) * Math.min(1, cp * 2);
+                if (si === 0) c.material.color.setHex(ccol);
+              }));
+              if (Math.random() < 0.4) burst(new THREE.Vector3(battleCenter.x - 0.5, 1.4, battleCenter.z), ccol, 0.5);
+              armR.rotation.z = 0.12 + Math.sin(cp * Math.PI) * 0.6 + cp * 0.8; // chanting sway
+              if (cls === "mage") armL.rotation.x = -1.35 - Math.sin(cp * Math.PI) * 0.3;
+            } else if (A.t < CAST_SEC + 0.12) {
+              magicCircle.scale.setScalar(1.4 + (A.t - CAST_SEC) * 5);
+              magicCircle.userData.stars.forEach((st) => st.children.forEach((c) => { c.material.opacity = Math.max(0, 0.85 - (A.t - CAST_SEC) * 8); }));
+              // ⚔️☁️ release: a giant blade of light plunges from the sky onto the enemy (once)
+              if (!A.beamFired && cls !== "warrior" && cls !== "archer" && cls !== "assassin" && cls !== "lancer" && cls !== "samurai") {
+                A.beamFired = true;
+                const bc = (CLASSES[cls] && CLASSES[cls].color) || 0xfff2c0;
+                spawnSkillFx("swordbeam", em.position, bc);
+                if (G.sfx) G.sfx.hit && G.sfx.hit();
+              }
+            } else {
+              magicCircle.visible = false;
+              magicCircle.scale.setScalar(1);
+            }
+            const applyHit = (dmg, fxColor, extraMsg = "") => {
+              dmg = Math.round(dmg);
+              A.total += dmg;
+              G.enemy.hp = Math.max(0, G.enemy.hp - dmg);
+              burst(em.position, fxColor);
+              em.userData.body.material.emissive = new THREE.Color(0x661122);
+              setTimeout(() => { if (em.userData.body) em.userData.body.material.emissive = new THREE.Color(0x000000); }, 150);
+              setUi((u) => ({
+                ...u, enemy: { ...u.enemy, hp: G.enemy.hp },
+                msg: `🌟 ${ULTS[cls].name} -${dmg}${extraMsg} (รวม ${A.total})`,
+              }));
+            };
+            // ⏳ hold the strike until casting is done — the char just charges during the cast
+            if (casting) {
+              // (charging — attack motions below are skipped this frame)
+            } else
+            if (cls === "warrior") {
+              // 🌪️⚔️ spin toward the enemy, 3 slashes
+              char.rotation.y = Math.PI / 2 + p * Math.PI * 6;
+              char.position.x = battleCenter.x - 1.3 + Math.sin(p * Math.PI) * 1.6;
+              armR.rotation.z = 1.6;
+              armL.rotation.z = -1.6;
+              [0.3, 0.55, 0.8].forEach((hp2, i) => {
+                if (p >= hp2 && A.hits <= i) {
+                  A.hits = i + 1;
+                  fireSlash(em.position, CLASSES.warrior.color);
+                  applyHit(roll() * 0.9, CLASSES.warrior.color, ` ฟันที่ ${i + 1}!`);
+                }
+              });
+              if (p >= 0.95 && !A.buffDone) {
+                A.buffDone = true;
+                G.battleDef += 3;
+              }
+            } else if (cls === "assassin") {
+              // 🗡️⭐ pentagram assault — dash through the enemy along a 5-point star, one crit per leg
+              const ex = battleCenter.x + (G.enemyX || 1.3);
+              const ez = battleCenter.z;
+              const R = 1.7;
+              // star vertices in the vertical plane (x,y): order 0→1→2→3→4 traces a pentagram
+              const verts = [];
+              for (let k = 0; k < 5; k++) {
+                const ang = Math.PI / 2 + k * (Math.PI * 4 / 5); // step 144° = star path
+                verts.push({ x: ex + Math.cos(ang) * R, y: 1.1 + Math.sin(ang) * R * 0.75 });
+              }
+              // ⭐ glowing star-trail lines, revealed as each leg is traced
+              if (!A.starLines) {
+                A.starLines = [];
+                for (let k = 0; k < 5; k++) {
+                  const v1 = verts[k], v2 = verts[(k + 1) % 5];
+                  const len = Math.hypot(v2.x - v1.x, v2.y - v1.y);
+                  const ln = new THREE.Mesh(new THREE.BoxGeometry(len, 0.06, 0.06), new THREE.MeshBasicMaterial({ color: 0xb87ae8, transparent: true, opacity: 0, depthWrite: false }));
+                  ln.position.set((v1.x + v2.x) / 2, (v1.y + v2.y) / 2, ez);
+                  ln.rotation.z = Math.atan2(v2.y - v1.y, v2.x - v1.x);
+                  ln.renderOrder = 998;
+                  scene.add(ln);
+                  A.starLines.push(ln);
+                }
+              }
+              // 5 legs over p 0..0.9, finisher pose after
+              const legDur = 0.9 / 5;
+              const leg = Math.min(4, Math.floor(p / legDur));
+              const lp = Math.min(1, (p - leg * legDur) / legDur);
+              const v1 = verts[leg], v2 = verts[(leg + 1) % 5];
+              if (p < 0.9) {
+                // dash along the current star leg (fast, slight ease)
+                const e2 = lp < 0.5 ? 2 * lp * lp : 1 - Math.pow(-2 * lp + 2, 2) / 2;
+                char.position.x = v1.x + (v2.x - v1.x) * e2;
+                char.position.y = (v1.y + (v2.y - v1.y) * e2) - 1.0; // char root offset
+                char.position.z = ez;
+                char.rotation.z = Math.atan2(v2.y - v1.y, v2.x - v1.x) - Math.PI / 2 + Math.PI / 2; // lean along the dash
+                char.rotation.y = Math.PI / 2;
+                armR.rotation.z = 1.5; armL.rotation.z = -1.5; // daggers out
+                // reveal the line being traced + fade older ones slightly
+                A.starLines.forEach((ln, i2) => {
+                  if (i2 < leg) ln.material.opacity = 0.75;
+                  else if (i2 === leg) ln.material.opacity = 0.9 * lp;
+                });
+                // hit at each leg midpoint (passing through the enemy)
+                if (lp >= 0.5 && A.hits <= leg) {
+                  A.hits = leg + 1;
+                  fireSlash(em.position, 0xb87ae8);
+                  applyHit(roll() * 0.62 * 2, CLASSES.assassin.color, ` ⭐ แฉกที่ ${leg + 1}!`); // crit each leg
+                  if (G.sfx) G.sfx.hit && G.sfx.hit();
+                }
+              } else {
+                // ✨ finisher: land at center, star flashes bright then fades
+                char.position.set(battleCenter.x - 1.3, 0, ez);
+                char.rotation.z = 0; char.rotation.y = Math.PI / 2;
+                const fpp = (p - 0.9) / 0.1;
+                A.starLines.forEach((ln) => { ln.material.opacity = Math.max(0, 0.95 - fpp); ln.scale.y = 1 + fpp * 2; });
+                if (A.hits <= 5) { A.hits = 6; burst(em.position, 0xb87ae8, 1.4); }
+              }
+              if (p >= 1 && A.starLines) { A.starLines.forEach((ln) => scene.remove(ln)); A.starLines = null; }
+            } else if (cls === "archer") {
+              // 🏹 raise the bow overhead, fire a shot skyward, then a rain of arrows falls on the enemy
+              char.position.x = battleCenter.x - 1.3;
+              char.rotation.y = Math.PI / 2 - 0.2;
+              wand.position.set(0.02, -1.05, 0.12);
+              wand.rotation.set(Math.PI / 2, -Math.PI / 2, 0); // bow perpendicular to the raised arm
+              if (p < 0.28) {
+                // draw phase — raise both arms high, aiming up at the sky
+                const dp = p / 0.28;
+                armR.rotation.x = -2.5 - dp * 0.4;   // bow arm points up overhead
+                armR.rotation.z = 0.1;
+                armL.rotation.x = -2.3;              // draw hand high
+                armL.rotation.z = -0.1 - dp * 0.6;   // pull the string
+                armL.rotation.y = dp * 0.4;
+              } else if (p < 0.36) {
+                // release skyward
+                armL.rotation.x = -2.0;
+                armL.rotation.z = -0.2;
+                armL.rotation.y = 0;
+                if (!A.skyShot) { A.skyShot = true; if (G.sfx) G.sfx.hit && G.sfx.hit(); }
+              } else {
+                // hold the follow-through while arrows rain
+                armR.rotation.x = -2.2;
+                armL.rotation.x = -1.6;
+                armL.rotation.z = -0.12; armL.rotation.y = 0;
+              }
+              // the skyward arrow (fired from the bow up into the clouds)
+              if (p >= 0.15 && p < 0.42) {
+                arrowFx.visible = true;
+                const sp = (p - 0.15) / 0.27;
+                arrowFx.position.set(char.position.x + 0.2, 1.6 + sp * 3.4, char.position.z);
+                arrowFx.rotation.z = Math.PI / 2; // point up
+              } else arrowFx.visible = false;
+              // 🌧️🏹 rain of arrows falling on the enemy (starts after the shot goes up)
+              if (!A.critIdx) A.critIdx = 2 + Math.floor(Math.random() * 4);
+              rainArrows.forEach((a, i) => {
+                const start = 0.4 + i * 0.1;
+                const end = start + 0.14;
+                if (p >= start && p < end) {
+                  a.visible = true;
+                  const fp = (p - start) / 0.14;
+                  a.position.set(
+                    em.position.x + (i - 2) * 0.28,
+                    4.6 - fp * 3.8,
+                    em.position.z + ((i % 2) - 0.5) * 0.4
+                  );
+                  a.rotation.z = -Math.PI / 2 - 0.3; // pointing down as they fall
+                } else if (p >= end && a.visible) {
+                  a.visible = false;
+                  const crit = i + 1 === A.critIdx;
+                  applyHit(roll() * 0.6 * (crit ? 2 : 1), CLASSES.archer.color, crit ? " 🎯 คริ!!" : "");
+                  burst(em.position, CLASSES.archer.color);
+                }
+              });
+            } else if (cls === "lancer") {
+              // 🔱💥 พายุหอกทะลวง — a storm of rapid piercing thrusts, then one huge finisher
+              const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+              char.position.x = battleCenter.x - 1.3; // stay planted; the spear does the work
+              if (p < 0.75) {
+                // flurry phase: spear pistons forward super fast, body bobs with rhythm
+                const jab = Math.abs(Math.sin(p * Math.PI * 14));
+                armR.rotation.x = jab * 1.5;              // rapid forward jabs
+                armR.rotation.z = 0.12 + jab * 0.1;
+                char.rotation.z = jab * 0.08;
+                char.position.z = battleCenter.z + Math.sin(p * Math.PI * 14) * 0.05;
+              } else {
+                // finisher: coil, then one massive lunging thrust
+                const s = easeOut((p - 0.75) / 0.25);
+                armR.rotation.x = -0.6 + s * 2.6;         // wind back then explode forward
+                armR.rotation.z = 0.12;
+                char.rotation.z = -0.2 + s * 0.5;
+                char.position.x = (battleCenter.x - 1.4) + s * 0.7; // lunge in for the kill
+                char.position.z = battleCenter.z;
+              }
+              // rapid piercing hits during the flurry + a big finisher
+              [0.12, 0.24, 0.36, 0.48, 0.6, 0.72].forEach((hp2, i) => {
+                if (p >= hp2 && A.hits <= i) {
+                  A.hits = i + 1;
+                  spawnSkillFx("pierce", em.position, CLASSES.lancer.color);
+                  applyHit(roll() * 0.55, CLASSES.lancer.color, ` เจาะที่ ${i + 1}! 🔱`); // pierces everything
+                }
+              });
+              if (p >= 0.9 && A.hits <= 6) {
+                A.hits = 7;
+                spawnSkillFx("quake", em.position, CLASSES.lancer.color);
+                fireSlash(em.position, CLASSES.lancer.color);
+                applyHit(roll() * 1.8, CLASSES.lancer.color, " 💥 ทะลวงสุดท้าย!!"); // big finisher
+              }
+            } else if (cls === "samurai") {
+              // ⚔️🕊️ นกนางแอ่นหวนกลับ — raise high, slash DOWN, then instantly reverse UP (swallow's tail)
+              const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+              const easeIn = (x) => x * x * x;
+              const near = battleCenter.x + (G.enemyX || 1.3) - 0.95;
+              // dash in during the wind-up
+              char.position.x = (battleCenter.x - 1.3) + (near - (battleCenter.x - 1.3)) * Math.min(1, p * 2.5);
+              if (p < 0.3) {
+                // phase 1: raise the katana high overhead, lean back (the swallow climbs)
+                const w = easeOut(p / 0.3);
+                armR.rotation.z = 0.12 + w * 3.0;
+                armR.rotation.x = -w * 0.5;
+                char.rotation.z = w * 0.22;
+              } else if (p < 0.6) {
+                // phase 2: the downward cut (blade plunges)
+                const s = easeIn((p - 0.3) / 0.3);
+                armR.rotation.z = 3.12 - s * 4.4;   // cleave straight down
+                armR.rotation.x = -0.5 + s * 0.8;
+                char.rotation.z = 0.22 - s * 0.5;   // whole body drives down
+              } else {
+                // phase 3: instant REVERSAL — the blade whips back up like a swallow turning
+                const r = easeOut((p - 0.6) / 0.4);
+                armR.rotation.z = -1.28 + r * 4.4;  // snap back upward
+                armR.rotation.x = 0.3 - r * 0.6;
+                char.rotation.z = -0.28 + r * 0.34;
+              }
+              // feather-white swallow motes streak past
+              if (p > 0.25 && Math.random() < 0.5) burst(em.position, 0xeaf2ff, 0.5);
+              // three hits: down-cut, reversal, and the returning flourish — all guaranteed crits
+              [0.42, 0.66, 0.86].forEach((hp2, i) => {
+                if (p >= hp2 && A.hits <= i) {
+                  A.hits = i + 1;
+                  fireSlash(em.position, CLASSES.samurai.color);
+                  spawnSkillFx("snipe", em.position, 0xeaf2ff);
+                  const label = i === 0 ? " 🕊️ ฟันดิ่ง!" : i === 1 ? " 🕊️ หวนกลับ!" : " 🕊️ ปีกนางแอ่น!";
+                  applyHit(roll() * 0.95 * 2, CLASSES.samurai.color, label); // ×2 crit
+                }
+              });
+              if (p >= 0.98) char.position.x = battleCenter.x - 1.3;
+            } else {
+              if (p > 0.15 && p < 0.6) {
+                orbFx.visible = true;
+                const fp = (p - 0.15) / 0.45;
+                orbFx.scale.setScalar(2.2 + Math.sin(t * 15) * 0.2);
+                orbFx.material.emissive.setHex(0xf5652e);
+                orbFx.position.set(em.position.x, 6.5 - fp * 5.6, em.position.z);
+              }
+              if (p >= 0.6 && !A.hitDone) {
+                A.hitDone = true;
+                orbFx.visible = false;
+                orbFx.scale.setScalar(1);
+                fireShock(em.position, 0xf5652e);
+                G.est.burn = 2;
+                applyHit(roll() * 3.2, 0xf5652e, " เผาไหม้ 🔥");
+              }
+            }
+            if (p >= 1) {
+              char.rotation.y = Math.PI / 2;
+              char.rotation.z = 0;
+              char.position.x = battleCenter.x - 1.3;
+              char.position.y = 0;
+              char.position.z = battleCenter.z;
+              armR.rotation.z = 0.12;
+              armR.rotation.x = G.cls === "archer" ? -1.4 : 0; // 🏹 keep bow forward
+              armR.rotation.y = 0;
+              armL.rotation.z = -0.12;
+              magicCircle.visible = false;
+              orbFx.visible = false;
+              rainArrows.forEach((a) => (a.visible = false));
+              G.banim = null;
+              if (G.enemy.hp <= 0) winBattle();
+              else if (G.buddy && buddyMesh) {
+                G.banim = { type: "petAttack", t: 0, dur: 0.55 };
+                setUi((u) => ({ ...u, msg: `🐾 ${PET_SKILL[G.buddy]}!` }));
+              } else enemyTurn();
+            }
+          } else if (A.type === "petAttack" && buddyMesh) {
+            const lunge = Math.sin(p * Math.PI) * 2.6;
+            buddyMesh.position.x = battleCenter.x - 2.2 + lunge;
+            buddyMesh.position.z = battleCenter.z + 0.7 - Math.sin(p * Math.PI) * 0.5;
+            if (p >= 0.5 && !A.hitDone) {
+              A.hitDone = true;
+              const pet = G.pets[G.buddy];
+              const elem = PET_ELEM[G.buddy];
+              const weak = WEAK[G.enemy.spId] === elem;
+              let dmg = 3 + SPECIES[G.buddy].tier * 2 * pet.stage + pet.lv + Math.random() * 3;
+              if (weak) dmg *= 1.5;
+              dmg = Math.round(dmg);
+              let petNote = weak ? " โดนจุดอ่อน!! 💢" : "";
+              { const d2 = enemyDefend(dmg); dmg = d2.dmg; petNote += d2.note; }
+              G.enemy.hp = Math.max(0, G.enemy.hp - dmg);
+              burst(em.position, ELEMENTS[elem].color, 0.6);
+              setUi((u) => ({
+                ...u, enemy: { ...u.enemy, hp: G.enemy.hp },
+                msg: `🐾 ${PET_SKILL[G.buddy]} -${dmg} HP${petNote}`,
+              }));
+            }
+            if (p >= 1) {
+              buddyMesh.position.set(battleCenter.x - 2.2, 0, battleCenter.z + 0.7);
+              G.banim = null;
+              if (G.enemy.hp <= 0) winBattle();
+              else enemyTurn();
+            }
+          } else if (A.type === "enemyAttack") {
+            const ex = G.enemyX || 1.3;
+            const lunge = Math.sin(p * Math.PI) * (ex - 0.2);
+            em.position.x = battleCenter.x + ex - lunge;
+            if (p >= 0.5 && !A.hitDone) {
+              A.hitDone = true;
+              // 💨 evasion check first!
+              if (Math.random() < (effEva() + (G.battleEva || 0)) / 100) {
+                burst(char.position, 0xffffff, 1.0);
+                char.position.z = battleCenter.z + 0.55; // quick side-step
+                setTimeout(() => { if (G.mode === "battle") char.position.z = battleCenter.z; }, 300);
+                setUi((u) => ({ ...u, msg: "💨 หลบได้อย่างว่องไว!" }));
+              } else {
+                const dmgFloor = Math.max(1, Math.round(G.enemy.lv * 0.4)); // ⚖️ enemies always chip a bit
+                const dmg = Math.max(dmgFloor, Math.round(G.enemy.atk + Math.random() * 3 - effDef() - (G.battleDef || 0) - (G.cls === "warrior" ? 2 : 0))); // 🛡️ def + earth wall + warrior grit
+                G.player.hp = Math.max(0, G.player.hp - dmg);
+                setMouth("ow");
+                burst(char.position, 0xf5c542);
+                // 🐲 enraged boss extra strike
+                if (G.enemy.enraged && G.player.hp > 0 && Math.random() < 0.4) {
+                  const dmg2 = Math.max(1, Math.round(G.enemy.atk * 0.7 + Math.random() * 2 - effDef() - (G.battleDef || 0)));
+                  G.player.hp = Math.max(0, G.player.hp - dmg2);
+                  burst(char.position, 0xff2a2a, 1.2);
+                  setUi((u) => ({ ...u, msg: `🐲 โจมตีรัวเฟส 2! -${dmg} -${dmg2} HP` }));
+                } else {
+                  setUi((u) => ({ ...u, msg: `โดนโจมตี! -${dmg} HP` }));
+                }
+                syncPlayer();
+              }
+            }
+            if (p >= 1) {
+              em.position.x = battleCenter.x + (G.enemyX || 1.3);
+              G.banim = null;
+              if (G.player.hp <= 0) {
+                // faint
+                if (G.sfx) G.sfx.lose();
+                G.combo = 0; // 💔 streak broken
+                setUi((u) => ({ ...u, combo: 0 }));
+                G.mode = "fainted";
+                setMouth("sad");
+                setUi((u) => ({ ...u, mode: "fainted", msg: "" }));
+                if (G.enemy) {
+                  const mm = G.enemy.mesh;
+                  if (mm.userData.dungeon || mm.userData.golden || mm.userData.ghost) {
+                    scene.remove(mm); // special foes vanish
+                    if (mm.userData.ghost) ghostMesh = null;
+                  } else {
+                    mm.userData.wander = { cx: mm.position.x, cz: mm.position.z, ph: Math.random() * 6, r: 1.4, sp: mm.userData.boss ? 0.2 : 0.4 };
+                    mm.userData.shy = 4;
+                    wilds.push(mm); // it stays in the world (bosses wait for a rematch!)
+                  }
+                  G.enemy = null;
+                }
+                if (G.dungeon) {
+                  G.dungeon = null;
+                  setUi((u) => ({ ...u, dungeonFloor: 0 }));
+                  toast("🗼 ถูกดีดออกจากหอคอยมิติ... ไว้มาแก้มือใหม่!");
+                }
+                setTimeout(() => {
+                  G.player.hp = effMaxHp();
+                  char.position.set(0, 0, 0);
+                  if (G.restoreScenery) G.restoreScenery();
+                  G.mode = "explore";
+                  setMouth("smile");
+                  syncPlayer();
+                  setUi((u) => ({ ...u, mode: "explore" }));
+                }, 2000);
+              } else {
+                setMouth("smile");
+                // 💧 regenerate mana each round
+                G.player.mp = Math.min(effMaxMp(), G.player.mp + 6 + (G.cls === "mage" ? 4 : 0));
+                setUi((u) => ({ ...u, bstate: "choose", mp: Math.ceil(G.player.mp) }));
+              }
+            }
+          } else if (A.type === "throwBall") {
+            // phase 1 (0..0.35): arc flight; phase 2: shake; end: result
+            ball.visible = true;
+            const ex = G.enemyX || 1.3;
+            if (p < 0.35) {
+              const fp = p / 0.35;
+              ball.position.set(
+                battleCenter.x - 1.3 + fp * (1.3 + ex),
+                1.6 + Math.sin(fp * Math.PI) * 1.4,
+                battleCenter.z
+              );
+              ball.rotation.z = fp * 10;
+              em.visible = true;
+            } else {
+              // monster inside ball, shaking on the ground
+              em.visible = false;
+              ball.position.set(battleCenter.x + ex, 0.2, battleCenter.z);
+              ball.rotation.z = Math.sin(A.t * 18) * 0.35;
+            }
+            if (p >= 1) {
+              G.banim = null;
+              ball.visible = false;
+              const sp = SPECIES[G.enemy.spId];
+              const baseCatch = G.enemy.golden ? 0.6 : G.enemy.boss ? 0.05 : G.enemy.ghost ? 0.1 : sp.catch; // 🌟 golden = easy, 👻/👑 = hard
+              const chance = Math.min(0.95, baseCatch + (1 - G.enemy.hp / G.enemy.maxHp) * (G.enemy.boss ? 0.15 : 0.55) + effLuck() * 0.01); // 🍀 luck helps
+              if (Math.random() < chance) {
+                // caught!
+                burst(em.position, 0xf06a8a);
+                setMouth("laugh");
+                const cid = G.enemy.spId;
+                const isNew = !G.pets[cid];
+                G.col[cid] = (G.col[cid] || 0) + 1;
+                if (G.sfx) G.sfx.catch();
+                questProgress("catch", 1); // 📜
+                G.achStats.catches = (G.achStats.catches || 0) + 1;
+                checkAchievements();
+                if (isNew) G.pets[cid] = { lv: 1, exp: 0, stage: 1 };
+                setUi((u) => ({
+                  ...u, col: { ...G.col }, pets: { ...G.pets },
+                  msg: isNew ? `🎊 จับ${sp.name} Lv.${G.enemy.lv} ได้แล้ว!` : `🎊 จับ${sp.name}ตัวที่ ${G.col[cid]} ได้! พลังวิญญาณ +20`,
+                }));
+                if (!isNew) petGain(cid, 20); // duplicate catch powers up the pet
+                gainExp(30 + sp.tier * 10 + G.enemy.lv * 3);
+                scene.remove(em);
+                if (!G.buddy) G.setBuddy(cid);
+                setTimeout(() => endBattle(false), 1400);
+                G.banim = { type: "wait", t: 0, dur: 1.4 };
+              } else {
+                em.visible = true;
+                burst(em.position, 0xcccccc, 0.5);
+                setUi((u) => ({ ...u, msg: `${sp.name}ดิ้นหลุดออกมา! 💦` }));
+                enemyTurn();
+              }
+            }
+          } else if (A.type === "wait" && A.t >= A.dur) {
+            G.banim = null;
+          }
+        }
+      }
+
+      // sparks physics
+      sparks.forEach((s) => {
+        if (!s.visible) return;
+        s.userData.t += dt;
+        s.position.x += s.userData.vx * dt;
+        s.position.z += s.userData.vz * dt;
+        s.userData.vy -= 8 * dt;
+        s.position.y += s.userData.vy * dt;
+        s.material.opacity = Math.max(0, 1 - s.userData.t * 1.6);
+        if (s.userData.t > 0.8 || s.position.y < 0) s.visible = false;
+      });
+
+      // class FX lifetimes
+      updateSkillFx(dt); // ✨ per-skill impact effects
+      // ✨ sword trail — active during a melee player attack/ult swing
+      {
+        const A = G.banim;
+        const meleeClasses = ["warrior", "samurai", "lancer", "assassin"];
+        const swinging = A && (A.type === "playerAttack" || A.type === "ult") && meleeClasses.includes(G.cls) && G.mode === "battle";
+        const trailColor = A && A.skill ? A.skill.color : (G.cls && CLASSES[G.cls] ? CLASSES[G.cls].color : 0xffffff);
+        updateSwordTrail(swinging, trailColor);
+      }
+      if (slashFx.visible) {
+        slashFx.userData.t += dt;
+        const st = slashFx.userData.t / 0.35;
+        slashFx.scale.setScalar(0.7 + st * 1.1);
+        slashFx.material.opacity = Math.max(0, 0.95 * (1 - st));
+        if (st >= 1) slashFx.visible = false;
+      }
+      if (shockFx.visible) {
+        shockFx.userData.t += dt;
+        const st = shockFx.userData.t / 0.45;
+        shockFx.scale.setScalar(0.5 + st * 3.2);
+        shockFx.material.opacity = Math.max(0, 0.9 * (1 - st));
+        if (st >= 1) shockFx.visible = false;
+      }
+
+      // equipped gear FX
+      const wm = weaponModels[curWeapon];
+      if (wm && wm.visible) {
+        if (wm.userData.flame) wm.userData.flame.scale.setScalar(1 + Math.sin(t * 12) * 0.16); // 🔥 flicker
+        if (wm.userData.flameParts) { // 🔥 flame segments lick and flicker
+          wm.userData.flameParts.forEach((seg, k) => {
+            seg.rotation.z = Math.sin(k * 1.6 + t * 8) * 0.28;
+            seg.material.emissiveIntensity = 1.0 + Math.sin(t * 14 + k) * 0.5;
+          });
+        }
+        if (wm.userData.blade) wm.userData.blade.material.emissiveIntensity = 0.5 + Math.sin(t * 5) * 0.25; // 💎 shimmer
+        if (wm.userData.moon) wm.userData.moon.material.emissiveIntensity = 0.9 + Math.sin(t * 4) * 0.4; // 🌙 pulse
+        if (wm.userData.wstar) wm.userData.wstar.rotation.y = t * 4;
+      }
+      // 🔮 mage orb: bob, spin its ring, pulse the core & light
+      if (G.mageOrb && G.mageOrb.visible) {
+        const ud = G.mageOrb.userData;
+        G.mageOrb.position.y = -1.0 + Math.sin(t * 2.5) * 0.04; // gentle float right at the palm
+        ud.ring.rotation.z = t * 2.2;
+        ud.core.scale.setScalar(1 + Math.sin(t * 6) * 0.25);
+        ud.orb.material.emissiveIntensity = 1.1 + Math.sin(t * 4) * 0.4;
+        ud.light.intensity = 1.0 + Math.sin(t * 4) * 0.5;
+      }
+      // 📖 grimoire gem shimmer
+      if (G.mageBook && G.mageBook.visible && G.mageBook.userData.gem) {
+        G.mageBook.userData.gem.rotation.y = t * 2;
+        G.mageBook.userData.gem.material.emissiveIntensity = 1.0 + Math.sin(t * 5) * 0.4;
+      }
+      if (curOutfit === "oS" && outfitModels.oS.userData.crownStar) {
+        outfitModels.oS.userData.crownStar.rotation.y = t * 3; // ✨ crown star spins
+      }
+      // ✨ gear glow animation — richer with rarity & +level
+      if (G.glow && G.glow.tier >= 2) {
+        const gl = G.glow;
+        const beauty = 1 + gl.plus * 0.28 + (gl.tier - 2) * 0.15;
+        glowRing.position.x = char.position.x;
+        glowRing.position.z = char.position.z;
+        glowRing.rotation.z = t * (0.6 + gl.plus * 0.25);
+        glowRing.scale.setScalar(1 + Math.sin(t * 3) * 0.06 * beauty);
+        glowRing.material.opacity = 0.25 + 0.09 * gl.plus + (gl.tier >= 4 ? 0.12 : 0);
+        if (glowRing2.visible) {
+          glowRing2.position.x = char.position.x;
+          glowRing2.position.z = char.position.z;
+          glowRing2.rotation.z = -t * 1.1;
+          glowRing2.scale.setScalar(1 + Math.sin(t * 3 + 1.5) * 0.08 * beauty);
+          glowRing2.material.opacity = 0.3 + Math.sin(t * 5) * 0.12;
+        }
+        const orbitSpd = 1.1 + gl.plus * 0.3 + gl.tier * 0.18;
+        auraDots.forEach((d, i) => {
+          if (!d.visible) return;
+          const a = t * orbitSpd + (i / auraDots.length) * Math.PI * 2;
+          const rad = 0.9 + (gl.tier >= 5 ? 0.15 : 0) + Math.sin(t * 2 + i) * 0.06 * gl.plus;
+          d.position.set(
+            char.position.x + Math.cos(a) * rad,
+            1.1 + Math.sin(t * 2.5 + i) * (0.45 + gl.plus * 0.1) + (gl.tier >= 5 ? Math.sin(t * 6 + i) * 0.2 : 0),
+            char.position.z + Math.sin(a) * rad
+          );
+          d.rotation.y = t * 3 + i;
+          const sc = (0.7 + gl.plus * 0.12) * (gl.fullSet ? 1.5 : 1);
+          d.scale.setScalar(sc * (0.85 + Math.sin(t * 5 + i) * 0.25));
+          // 🐉 full dragon set: embers flicker between element color and gold
+          d.material.opacity = gl.fullSet ? 0.65 + Math.sin(t * 8 + i * 2) * 0.35 : 0.9;
+        });
+      }
+
+      blobShadow.position.x = char.position.x;
+      blobShadow.position.z = char.position.z;
+
+      // camera
+      if (G.mode === "create") {
+        // centered turntable, zoomable with pinch/wheel/buttons (camDist)
+        const cd = Math.max(2.6, Math.min(7, camDist * 0.5));
+        camera.position.x += (0 - camera.position.x) * 0.08;
+        camera.position.y += (1.55 + cd * 0.18 - camera.position.y) * 0.08;
+        camera.position.z += (cd - camera.position.z) * 0.08;
+        camera.lookAt(0, 1.35, 0);
+      } else if (G.mode === "battle" || G.mode === "fainted") {
+        const cx = battleCenter.x, cz = battleCenter.z;
+        const big = G.enemy && G.enemy.boss;
+        // frame both fighters head-to-toe; bosses need a wider shot; bZoom = player zoom
+        const dist = (big ? 8.6 : 6.6) * bZoom;
+        const h = Math.max(1.6, (big ? 4.3 : 3.2) * (0.45 + 0.55 * bZoom));
+        const lookY = big ? 2.05 : 1.65;
+        camera.position.x += (cx - camera.position.x) * 0.06;
+        camera.position.y += (h - camera.position.y) * 0.06;
+        camera.position.z += (cz + dist - camera.position.z) * 0.06;
+        camera.lookAt(cx, lookY, cz);
+      } else {
+        const camX = char.position.x * 0.5;
+        const camY = camDist * 0.77;
+        const camZ = camDist * 0.8 + char.position.z * 0.55;
+        camera.position.x += (camX - camera.position.x) * 0.05;
+        camera.position.y += (camY - camera.position.y) * 0.07;
+        camera.position.z += (camZ - camera.position.z) * 0.05;
+        camera.lookAt(char.position.x * 0.6, 0.8, char.position.z * 0.55);
+      }
+
+      renderer.render(scene, camera);
+      } catch (err) {
+        if (!G._loggedErr) { G._loggedErr = true; console.error("animate loop error:", err); }
+      }
+    };
+    animate();
+
+    const onResize = () => {
+      const w = mount.clientWidth, h = mount.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      renderer.domElement.removeEventListener("wheel", onWheel);
+      renderer.dispose();
+      mount.removeChild(renderer.domElement);
+    };
+  }, []);
+
+  const G = gameRef.current;
+  const font = "'Segoe UI', system-ui, sans-serif";
+  const card = {
+    background: "#fff", borderRadius: 18, padding: "14px 24px", textAlign: "center",
+    boxShadow: "0 4px 14px rgba(90,120,70,0.25)",
+  };
+  const bigBtn = {
+    padding: "13px 40px", borderRadius: 999, border: "none", cursor: "pointer",
+    fontSize: 18, fontWeight: 700, color: "#fff", background: "#d9536b",
+    boxShadow: "0 5px 16px rgba(217,83,107,0.45)", fontFamily: font,
+  };
+  const battleBtn = (bg) => ({
+    flex: "1 1 40%", minWidth: 120, padding: "12px 6px", borderRadius: 14, border: "none",
+    cursor: "pointer", fontSize: 15, fontWeight: 800, color: "#fff",
+    background: bg, boxShadow: "0 4px 10px rgba(0,0,0,0.18)", fontFamily: font,
+  });
+  const hpBar = (hp, maxHp, color) => (
+    <div style={{ background: "#eee", borderRadius: 999, height: 10, overflow: "hidden", marginTop: 4 }}>
+      <div style={{
+        width: `${Math.max(0, (hp / maxHp) * 100)}%`, height: "100%",
+        background: hp / maxHp > 0.35 ? color : "#e05555", borderRadius: 999, transition: "width 0.3s",
+      }}/>
+    </div>
+  );
+
+  const totalCaught = Object.values(ui.col).reduce((a, b) => a + b, 0);
+
+  return (
+    <div style={{ width: "100%", height: "100vh", position: "relative", background: "#eef2df", fontFamily: font }}>
+      <style>{`@keyframes toastUp { 0%{opacity:0;transform:translateY(10px);} 15%{opacity:1;transform:translateY(0);} 75%{opacity:1;} 100%{opacity:0;transform:translateY(-14px);} } @keyframes pulse { from{transform:scale(1);} to{transform:scale(1.08);} } @keyframes hudscroll { 0%{transform:translateX(0);} 100%{transform:translateX(-50%);} }`}</style>
+      <div ref={mountRef} style={{ width: "100%", height: "100%" }} />
+
+      {/* ===== 💾 title / save-slot selection ===== */}
+      {ui.mode === "title" && (
+        <div style={{
+          position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", gap: 14, padding: 20,
+          background: "linear-gradient(180deg,#fce8f0,#eef2df)",
+        }}>
+          <div style={{ fontSize: 40, marginBottom: -6 }}>🍒</div>
+          <div style={{ fontSize: 26, fontWeight: 800, color: "#8a5a4a" }}>น้องเชอร์รี่ผจญภัย</div>
+          <div style={{ fontSize: 12.5, color: "#a3796a", marginBottom: 6 }}>เลือกช่องบันทึก — เล่นได้หลายตัวละคร!</div>
+          {[0, 1, 2].map((i) => {
+            const sv = (ui.slots || [])[i];
+            return (
+              <div key={i} style={{
+                width: "100%", maxWidth: 340, display: "flex", alignItems: "center", gap: 10,
+                background: "#fff", borderRadius: 16, padding: "12px 14px",
+                boxShadow: "0 4px 14px rgba(90,120,70,0.18)",
+              }}>
+                <div style={{ fontSize: 26 }}>{sv ? CLASSES[sv.cls].emoji : "➕"}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#5a5a4a" }}>
+                    ช่อง {i + 1}
+                    {sv && <span style={{ color: "#7ba05b" }}> · {sv.name || "เชอร์รี่"} ({CLASSES[sv.cls].name}) Lv.{sv.lv}</span>}
+                    {sv && sv.ngPlus > 0 && <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#d9536b", borderRadius: 999, padding: "1px 6px", marginLeft: 4 }}>NG+{sv.ngPlus}</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#a3a396" }}>
+                    {sv ? `💰 ${sv.gold} ทอง — แตะเพื่อเล่นต่อ` : "ว่าง — แตะเพื่อเริ่มใหม่"}
+                  </div>
+                </div>
+                <button onClick={() => G.pickSlot(i)} style={{
+                  padding: "8px 16px", borderRadius: 999, border: "none", cursor: "pointer",
+                  fontSize: 12.5, fontWeight: 800, fontFamily: font, color: "#fff",
+                  background: sv ? "linear-gradient(90deg,#7ba05b,#5aa06a)" : "linear-gradient(90deg,#e0708a,#f5a623)",
+                }}>{sv ? "▶ เล่น" : "＋ ใหม่"}</button>
+                {sv && ui.confirmDelete !== i && (
+                  <button onClick={() => setUi((u) => ({ ...u, confirmDelete: i }))} title="ล้าง" style={{
+                    width: 30, height: 30, borderRadius: "50%", border: "none", cursor: "pointer",
+                    fontSize: 13, background: "#f3ede4",
+                  }}>🗑️</button>
+                )}
+                {sv && ui.confirmDelete === i && (
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button onClick={() => { G.clearSave(i); setUi((u) => ({ ...u, confirmDelete: null, slots: G.readSlots() })); }} title="ยืนยันลบ" style={{
+                      width: 30, height: 30, borderRadius: "50%", border: "none", cursor: "pointer",
+                      fontSize: 13, background: "#d9536b", color: "#fff", fontWeight: 800,
+                    }}>✓</button>
+                    <button onClick={() => setUi((u) => ({ ...u, confirmDelete: null }))} title="ยกเลิก" style={{
+                      width: 30, height: 30, borderRadius: "50%", border: "none", cursor: "pointer",
+                      fontSize: 13, background: "#f3ede4", fontWeight: 800,
+                    }}>✕</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ===== 🎀 character creator ===== */}
+      {ui.mode === "create" && (
+        <>
+          <div style={{
+            position: "absolute", top: 14, left: 190, right: 12, textAlign: "center", pointerEvents: "none",
+          }}>
+            <div style={{ fontSize: 19, fontWeight: 800, color: "#8a5a4a" }}>🎀 ออกแบบน้องเชอร์รี่</div>
+            <div style={{ fontSize: 11.5, color: "#a3796a", marginTop: 2 }}>เมนูซ้าย · บีบ/ลากซูมได้ · ลากหมุนตัวได้</div>
+          </div>
+          {/* 💾 back to slot selection */}
+          <div style={{ position: "absolute", top: 12, right: 12 }}>
+            <button onClick={() => setUi((u) => ({ ...u, mode: "title", slots: G.readSlots() }))} style={{
+              padding: "7px 13px", borderRadius: 999, border: "none", cursor: "pointer",
+              fontSize: 12, fontWeight: 800, fontFamily: font, color: "#8a5a4a",
+              background: "#fff", boxShadow: "0 3px 10px rgba(90,120,70,0.25)",
+            }}>← ช่องเซฟ</button>
+          </div>
+          <div style={{
+            position: "absolute", top: 0, left: 0, bottom: 128, width: 178,
+            background: "rgba(255,255,255,0.94)", borderRadius: "0 20px 20px 0",
+            padding: "12px 10px", overflowY: "auto",
+            boxShadow: "6px 0 24px rgba(90,120,70,0.22)",
+            display: "flex", flexDirection: "column", gap: 10,
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#8a5a4a", textAlign: "center" }}>🎀 แต่งตัว</div>
+
+            {/* ✏️ character name */}
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: "#8a5a4a", marginBottom: 4 }}>✏️ ตั้งชื่อตัวละคร</div>
+              <input
+                type="text"
+                maxLength={12}
+                defaultValue={ui.pendingName || ""}
+                placeholder="เชอร์รี่"
+                onChange={(e) => { G.pendingName = e.target.value; }}
+                style={{
+                  width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 10,
+                  border: "2px solid #e5d5cc", fontSize: 13, fontFamily: font, color: "#5a5a4a",
+                  outline: "none", background: "#fff",
+                }}
+              />
+            </div>
+
+            {/* 👦👧 gender */}
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: "#8a5a4a", marginBottom: 4 }}>🧍 เพศ</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {CUSTOM.genders.map((o, i) => (
+                  <button key={i} onClick={() => G.setCustom("gender", i)} style={{
+                    flex: 1, padding: "8px 0", borderRadius: 10, cursor: "pointer", fontFamily: font,
+                    fontSize: 12.5, fontWeight: 800,
+                    color: ui.custom.gender === i ? "#fff" : "#8a5a4a",
+                    background: ui.custom.gender === i ? "#d9536b" : "#f3ede4",
+                    border: "none",
+                  }}>{o.emoji} {o.n}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* 🖐️ skin */}
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: "#8a5a4a", marginBottom: 4 }}>🖐️ สีผิว</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {CUSTOM.skins.map((o, i) => (
+                  <button key={i} onClick={() => G.setCustom("skin", i)} title={o.n} style={{
+                    width: 32, height: 32, borderRadius: "50%", cursor: "pointer",
+                    background: `#${o.c.toString(16).padStart(6, "0")}`,
+                    border: ui.custom.skin === i ? "3px solid #d9536b" : "3px solid #eee",
+                  }}/>
+                ))}
+              </div>
+            </div>
+
+            {/* 💇 hair style */}
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: "#8a5a4a", marginBottom: 4 }}>💇 ทรงผม</div>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {CUSTOM.hairStyles.map((n, i) => (
+                  <button key={i} onClick={() => G.setCustom("hairStyle", i)} style={{
+                    padding: "6px 9px", borderRadius: 999, border: "none", cursor: "pointer",
+                    fontSize: 11, fontWeight: 700, fontFamily: font,
+                    background: ui.custom.hairStyle === i ? "#d9536b" : "#f3ede4",
+                    color: ui.custom.hairStyle === i ? "#fff" : "#8a5a4a",
+                  }}>{n}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* 🎨 hair color */}
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: "#8a5a4a", marginBottom: 4 }}>🎨 สีผม</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {CUSTOM.hairColors.map((o, i) => (
+                  <button key={i} onClick={() => G.setCustom("hairColor", i)} title={o.n} style={{
+                    width: 32, height: 32, borderRadius: "50%", cursor: "pointer",
+                    background: `#${o.c.toString(16).padStart(6, "0")}`,
+                    border: ui.custom.hairColor === i ? "3px solid #d9536b" : "3px solid #eee",
+                  }}/>
+                ))}
+              </div>
+            </div>
+
+            {/* 👀 eyes */}
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: "#8a5a4a", marginBottom: 4 }}>👀 ดวงตา</div>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {CUSTOM.eyes.map((n, i) => (
+                  <button key={i} onClick={() => G.setCustom("eyes", i)} style={{
+                    padding: "6px 9px", borderRadius: 999, border: "none", cursor: "pointer",
+                    fontSize: 11, fontWeight: 700, fontFamily: font,
+                    background: ui.custom.eyes === i ? "#d9536b" : "#f3ede4",
+                    color: ui.custom.eyes === i ? "#fff" : "#8a5a4a",
+                  }}>{n}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* 👗 outfit */}
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: "#8a5a4a", marginBottom: 4 }}>👗 ชุดเริ่มต้น</div>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {CUSTOM.outfits.map((o, i) => (
+                  <button key={i} onClick={() => G.setCustom("outfit", i)} style={{
+                    padding: "6px 9px", borderRadius: 999, cursor: "pointer",
+                    fontSize: 11, fontWeight: 700, fontFamily: font,
+                    background: ui.custom.outfit === i ? o.base : "#f3ede4",
+                    color: ui.custom.outfit === i ? "#fff" : "#8a5a4a",
+                    border: `2px solid ${o.base}`,
+                  }}>{o.n}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* actions */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: "auto" }}>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => {
+                  G.setCustom("skin", 0);
+                  G.setCustom("hairColor", 3);
+                  G.setCustom("hairStyle", 4);
+                  G.setCustom("eyes", 3);
+                  G.setCustom("outfit", 4);
+                }} style={{
+                  flex: 1, padding: "8px 0", borderRadius: 999, border: "none", cursor: "pointer",
+                  fontSize: 11.5, fontWeight: 800, fontFamily: font, color: "#fff",
+                  background: "linear-gradient(90deg,#f2a0b4,#2b2724)",
+                }}>🌸 พรีเซ็ต</button>
+                <button onClick={() => G.randomCustom()} style={{
+                  padding: "8px 12px", borderRadius: 999, border: "none", cursor: "pointer",
+                  fontSize: 12.5, fontWeight: 800, fontFamily: font, color: "#8a5a4a", background: "#f3ede4",
+                }}>🎲</button>
+              </div>
+              <button
+                onClick={() => { gameRef.current.mode = "title"; setUi((u) => ({ ...u, mode: "title" })); }}
+                style={{ ...bigBtn, padding: "10px 0", fontSize: 13.5, width: "100%" }}
+              >
+                ถัดไป ➜ อาชีพ
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* creator zoom buttons */}
+      {ui.mode === "create" && (
+        <div style={{ position: "absolute", right: 12, bottom: 138, display: "flex", flexDirection: "column", gap: 8 }}>
+          {[["＋", -1.2], ["－", 1.2]].map(([sym, d]) => (
+            <button key={sym} onClick={() => G.zoom(d)} style={{
+              width: 42, height: 42, borderRadius: "50%", border: "none", cursor: "pointer",
+              fontSize: 20, fontWeight: 800, color: "#5a7a4a", background: "rgba(255,255,255,0.9)",
+              boxShadow: "0 3px 9px rgba(90,120,70,0.3)", fontFamily: font,
+            }}>{sym}</button>
+          ))}
+        </div>
+      )}
+
+      {/* 🌀 warp map picker */}
+      {ui.warpAsk && ui.mode === "explore" && (
+        <div style={{
+          position: "absolute", top: "22%", left: 0, right: 0,
+          display: "flex", justifyContent: "center",
+        }}>
+          <div style={{
+            background: "#fff", borderRadius: 18, padding: "16px 20px", textAlign: "center",
+            boxShadow: "0 8px 24px rgba(40,90,160,0.4)", maxWidth: 320,
+          }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "#2a6ad0" }}>🌀 แท่นวาร์ปข้ามแดน</div>
+            <div style={{ fontSize: 11.5, color: "#8a7a9a", margin: "6px 0 10px" }}>
+              เลือกแผนที่ผจญภัย — แต่ละแดนมีมอนสเตอร์ประจำถิ่น
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {BIOMES.map((b, i) => (
+                <button key={b.id} onClick={() => G.doWarp(i)} disabled={i === ui.biomeIdx} style={{
+                  padding: "10px 14px", borderRadius: 12, border: "none",
+                  cursor: i === ui.biomeIdx ? "default" : "pointer",
+                  fontSize: 13.5, fontWeight: 800, fontFamily: font, textAlign: "left",
+                  color: i === ui.biomeIdx ? "#a0a0a0" : "#fff",
+                  background: i === ui.biomeIdx ? "#eee" : `#${b.ground.toString(16).padStart(6, "0")}`,
+                  opacity: i === ui.biomeIdx ? 0.7 : 1,
+                }}>
+                  {b.emoji} {b.name} <span style={{ fontSize: 10.5, opacity: 0.85 }}>· Lv.{b.lvMin}-{b.lvMax}</span> {i === ui.biomeIdx ? "(อยู่ที่นี่)" : ""}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => G.closeWarp()} style={{
+              marginTop: 10, padding: "8px 20px", borderRadius: 999, border: "none", cursor: "pointer",
+              fontSize: 13, fontWeight: 700, fontFamily: font, color: "#8a5a4a", background: "#f3ede4",
+            }}>ปิด</button>
+          </div>
+        </div>
+      )}
+
+      {/* 🗺️ biome name badge */}
+      {ui.mode === "explore" && (
+        <div style={{
+          position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)",
+          background: "rgba(255,255,255,0.85)", borderRadius: 999, padding: "4px 14px",
+          fontSize: 12.5, fontWeight: 800, color: "#5a5a4a", pointerEvents: "none",
+          boxShadow: "0 2px 8px rgba(90,120,70,0.2)",
+        }}>
+          {ui.biomeName}
+        </div>
+      )}
+      {/* 🏰 biome boss challenge button */}
+      {ui.mode === "explore" && (
+        <button
+          onClick={() => G.challengeBiomeBoss()}
+          style={{
+            position: "absolute", top: 40, left: "50%", transform: "translateX(-50%)",
+            background: "linear-gradient(90deg,#b03060,#e0708a)", borderRadius: 999,
+            padding: "5px 16px", fontSize: 12, fontWeight: 800, fontFamily: font, color: "#fff",
+            border: "none", cursor: "pointer", boxShadow: "0 3px 10px rgba(176,48,96,0.4)",
+          }}
+        >
+          ⚔️ ท้าดวลเจ้าถิ่น
+        </button>
+      )}
+
+      {/* 🎵 sound/music toggles */}
+      {ui.mode !== "create" && ui.mode !== "title" && (
+        <div style={{ position: "absolute", top: 148, left: 12, display: "flex", gap: 6 }}>
+          <button onClick={() => G.toggleSound()} title="เสียงเอฟเฟกต์" style={{
+            width: 34, height: 34, borderRadius: "50%", border: "none", cursor: "pointer",
+            fontSize: 15, background: ui.soundOn ? "#fff" : "#d8d8d0", opacity: ui.soundOn ? 1 : 0.6,
+            boxShadow: "0 2px 6px rgba(90,120,70,0.25)",
+          }}>{ui.soundOn ? "🔊" : "🔇"}</button>
+          <button onClick={() => G.toggleMusic()} title="เพลงประกอบ" style={{
+            width: 34, height: 34, borderRadius: "50%", border: "none", cursor: "pointer",
+            fontSize: 15, background: ui.musicOn ? "#fff" : "#d8d8d0", opacity: ui.musicOn ? 1 : 0.6,
+            boxShadow: "0 2px 6px rgba(90,120,70,0.25)",
+          }}>{ui.musicOn ? "🎵" : "🎜"}</button>
+          {ui.mode === "explore" && (
+            <button onClick={() => setUi((u) => ({ ...u, homeOpen: true, achUnlocked: { ...G.achUnlocked } }))} title="บ้านถ้วยรางวัล" style={{
+              width: 34, height: 34, borderRadius: "50%", border: "none", cursor: "pointer",
+              fontSize: 15, background: "#fff", boxShadow: "0 2px 6px rgba(90,120,70,0.25)",
+            }}>🏠</button>
+          )}
+        </div>
+      )}
+
+      {/* 👤 NPC talk button */}
+      {ui.mode === "explore" && ui.npcNear && !ui.npcTalk && (
+        <div style={{ position: "absolute", bottom: 160, left: "50%", transform: "translateX(-50%)" }}>
+          <button onClick={() => G.talkNPC()} style={{
+            padding: "10px 24px", borderRadius: 999, border: "none", cursor: "pointer",
+            fontSize: 14, fontWeight: 800, fontFamily: font, color: "#fff",
+            background: "linear-gradient(90deg,#6a8ac0,#8aacd0)",
+            boxShadow: "0 5px 16px rgba(106,138,192,0.5)",
+          }}>💬 คุยกับผู้เฒ่า</button>
+        </div>
+      )}
+      {/* 👤 NPC dialogue */}
+      {ui.npcTalk && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center",
+          background: "rgba(30,25,35,0.4)", padding: "0 16px 40px",
+        }}>
+          <div style={{
+            width: "100%", maxWidth: 400, background: "#fff", borderRadius: 18, padding: 18,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 26 }}>🧙</span>
+              <span style={{ fontSize: 14, fontWeight: 800, color: "#4a6aa0" }}>ผู้เฒ่าประจำหมู่บ้าน</span>
+              {!ui.npcTalk.last && <span style={{ fontSize: 11, color: "#a3a396", marginLeft: "auto" }}>บทที่ {(ui.npcTalk.chapter || 0) + 1}/{G.STORY.length}</span>}
+            </div>
+            <div style={{ fontSize: 13, color: "#5a5a4a", lineHeight: 1.75, marginBottom: 12 }}>
+              {ui.npcTalk.text}
+            </div>
+            {ui.npcTalk.hint && !ui.npcTalk.done && (
+              <div style={{
+                fontSize: 11.5, fontWeight: 700, borderRadius: 8, padding: "6px 10px", marginBottom: 12,
+                color: ui.npcTalk.met ? "#5aa06a" : "#c09020",
+                background: ui.npcTalk.met ? "#eaf7ec" : "#fdf3e0",
+              }}>
+                {ui.npcTalk.met ? "✅ สำเร็จแล้ว!" : "🎯 ภารกิจ:"} {ui.npcTalk.hint} {ui.npcTalk.met ? `· รับ ${ui.npcTalk.reward}💰` : ""}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => G.closeNPC()} style={{
+                padding: "8px 18px", borderRadius: 999, border: "none", cursor: "pointer",
+                fontSize: 13, fontWeight: 700, fontFamily: font, color: "#8a5a4a", background: "#f3ede4",
+              }}>{ui.npcTalk.done ? "ลาก่อน" : "ไว้ก่อน"}</button>
+              {ui.npcTalk.met && !ui.npcTalk.done && (
+                <button onClick={() => G.claimStory()} style={{
+                  padding: "8px 22px", borderRadius: 999, border: "none", cursor: "pointer",
+                  fontSize: 13, fontWeight: 800, fontFamily: font, color: "#fff",
+                  background: "linear-gradient(90deg,#6a8ac0,#8aacd0)",
+                }}>รับรางวัล 🎁</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📖 tutorial overlay */}
+      {ui.tutStep != null && G.TUTORIAL && G.TUTORIAL[ui.tutStep] && (ui.mode === "explore" || ui.mode === "battle") && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center",
+          background: "rgba(40,30,40,0.6)", padding: 20,
+        }}>
+          <div style={{
+            width: "100%", maxWidth: 320, background: "#fff", borderRadius: 20, padding: 20, textAlign: "center",
+            boxShadow: "0 12px 32px rgba(0,0,0,0.4)",
+          }}>
+            <div style={{ fontSize: 44, marginBottom: 6 }}>{G.TUTORIAL[ui.tutStep].emoji}</div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "#8a5a4a", marginBottom: 8 }}>
+              {G.TUTORIAL[ui.tutStep].title}
+            </div>
+            <div style={{ fontSize: 13, color: "#7a6a5a", lineHeight: 1.7, marginBottom: 16 }}>
+              {G.TUTORIAL[ui.tutStep].text}
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", gap: 5, marginBottom: 14 }}>
+              {G.TUTORIAL.map((_, i) => (
+                <div key={i} style={{
+                  width: i === ui.tutStep ? 18 : 7, height: 7, borderRadius: 99,
+                  background: i === ui.tutStep ? "#e0708a" : "#e5d5cc", transition: "width 0.2s",
+                }}/>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              <button onClick={() => G.tutSkip()} style={{
+                padding: "9px 18px", borderRadius: 999, border: "none", cursor: "pointer",
+                fontSize: 13, fontWeight: 700, fontFamily: font, color: "#8a5a4a", background: "#f3ede4",
+              }}>ข้าม</button>
+              <button onClick={() => G.tutNext()} style={{
+                padding: "9px 24px", borderRadius: 999, border: "none", cursor: "pointer",
+                fontSize: 13, fontWeight: 800, fontFamily: font, color: "#fff",
+                background: "linear-gradient(90deg,#e0708a,#f5a623)",
+              }}>{ui.tutStep >= G.TUTORIAL.length - 1 ? "เริ่มเล่น! 🎮" : "ถัดไป →"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🏠 trophy home showcase */}
+      {ui.homeOpen && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center",
+          background: "rgba(40,30,40,0.55)", padding: 16,
+        }}>
+          <div style={{
+            width: "100%", maxWidth: 380, maxHeight: "84vh", overflowY: "auto",
+            background: "linear-gradient(180deg,#fff6ea,#f3e8d8)", borderRadius: 20, padding: 18,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <span style={{ fontSize: 18, fontWeight: 800, color: "#8a5a3a" }}>🏠 บ้านถ้วยรางวัล</span>
+              <button onClick={() => setUi((u) => ({ ...u, homeOpen: false }))} style={{
+                width: 30, height: 30, borderRadius: "50%", border: "none", cursor: "pointer",
+                fontSize: 15, background: "#e8dcc8",
+              }}>✕</button>
+            </div>
+            <div style={{ fontSize: 11, color: "#a3896a", marginBottom: 12 }}>
+              ห้องโชว์ความสำเร็จของเชอร์รี่ — ยิ่งเก่งยิ่งเต็มห้อง!
+            </div>
+
+            {/* trophy shelf */}
+            <div style={{ background: "#e8d8b8", borderRadius: 12, padding: 12, marginBottom: 12 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: "#8a5a3a", marginBottom: 6 }}>🏆 ชั้นถ้วยรางวัล</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, minHeight: 40 }}>
+                {G.ACHIEVEMENTS.filter((a) => ui.achUnlocked && ui.achUnlocked[a.id]).map((a) => (
+                  <div key={a.id} title={a.name} style={{ fontSize: 30 }}>{a.emoji}</div>
+                ))}
+                {(!ui.achUnlocked || Object.keys(ui.achUnlocked).length === 0) && (
+                  <div style={{ fontSize: 11, color: "#b0a086" }}>ยังไม่มีถ้วยรางวัล — ไปทำความสำเร็จมาโชว์!</div>
+                )}
+              </div>
+            </div>
+
+            {/* pet display cases */}
+            <div style={{ background: "#d8e8d0", borderRadius: 12, padding: 12, marginBottom: 12 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: "#5a7a4a", marginBottom: 6 }}>
+                🐾 ตู้โชว์มอนสเตอร์ ({Object.keys(ui.col).length}/{Object.keys(SPECIES).length})
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 6 }}>
+                {Object.keys(SPECIES).map((id) => (
+                  <div key={id} style={{
+                    fontSize: 20, textAlign: "center", padding: 4, borderRadius: 8,
+                    background: ui.col[id] ? "#fff" : "#c8d4c0",
+                    filter: ui.col[id] ? "none" : "grayscale(1) brightness(0.7)",
+                    opacity: ui.col[id] ? 1 : 0.5,
+                  }}>{ui.col[id] ? SPECIES[id].emoji : "❓"}</div>
+                ))}
+              </div>
+            </div>
+
+            {/* banners: tower + biome bosses */}
+            <div style={{ background: "#e0d0e8", borderRadius: 12, padding: 12 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: "#6a4a8a", marginBottom: 6 }}>🚩 ป้ายเกียรติยศ</div>
+              <div style={{ fontSize: 12, color: "#5a5a4a", lineHeight: 1.9 }}>
+                🗼 หอคอยชั้นสูงสุด: <b>{Math.max(0, (ui.dungeonProgress || 1) - 1)}/100</b><br/>
+                🏰 เจ้าถิ่นที่ปราบ: <b>{Object.keys(G.biomeBossDefeated || {}).length}/5 แดน</b><br/>
+                ⚔️ มอนสเตอร์ที่ปราบ: <b>{(G.achStats && G.achStats.wins) || 0} ตัว</b><br/>
+                💗 จับได้ทั้งหมด: <b>{(G.achStats && G.achStats.catches) || 0} ตัว</b><br/>
+                ⭐ เลเวลสูงสุด: <b>Lv.{ui.level}</b><br/>
+                ⏱️ เวลาเล่น: <b>{(() => { const s = Math.floor((G.achStats && G.achStats.playSec) || 0); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); return h > 0 ? `${h} ชม. ${m} นาที` : `${m} นาที`; })()}</b>
+              </div>
+            </div>
+
+            {/* 🔄 New Game+ */}
+            <div style={{ background: "#ffe8e8", borderRadius: 12, padding: 12, marginTop: 12 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: "#b03060", marginBottom: 4 }}>
+                🔄 New Game+ {ui.ngPlus > 0 ? `(รอบ ${ui.ngPlus})` : ""}
+              </div>
+              <div style={{ fontSize: 10.5, color: "#a3796a", marginBottom: 8, lineHeight: 1.6 }}>
+                พิชิตหอคอย 100 ชั้น หรือถึง Lv.20 เพื่อเริ่มรอบใหม่ที่โหดขึ้น — <b>เก็บของ/สัตว์เลี้ยง/ทองไว้</b> แต่รีเซ็ตเลเวล+สกิล ศัตรูแรงขึ้น รางวัลมากขึ้น
+              </div>
+              <button onClick={() => G.startNGPlus()} style={{
+                width: "100%", padding: "9px 0", borderRadius: 10, border: "none", cursor: "pointer",
+                fontSize: 13, fontWeight: 800, fontFamily: font, color: "#fff",
+                background: "linear-gradient(90deg,#d9536b,#f5a623)",
+              }}>🔄 เริ่ม New Game+ {ui.ngPlus > 0 ? (ui.ngPlus + 1) : ""}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🎣 fishing UI */}
+      {ui.mode === "explore" && ui.pondNear && !ui.fishing && (
+        <div style={{
+          position: "absolute", bottom: 110, left: "50%", transform: "translateX(-50%)",
+        }}>
+          <button onClick={() => G.startFishing()} style={{
+            padding: "12px 28px", borderRadius: 999, border: "none", cursor: "pointer",
+            fontSize: 15, fontWeight: 800, fontFamily: font, color: "#fff",
+            background: "linear-gradient(90deg,#4a90c0,#6ac0e0)",
+            boxShadow: "0 5px 16px rgba(74,144,192,0.5)",
+          }}>🎣 ตกปลา</button>
+        </div>
+      )}
+      {ui.mode === "explore" && ui.fishing && (
+        <div style={{
+          position: "absolute", bottom: 110, left: "50%", transform: "translateX(-50%)",
+          textAlign: "center",
+        }}>
+          {ui.fishing.phase === "waiting" ? (
+            <button onClick={() => G.reelFishing()} style={{
+              background: "rgba(255,255,255,0.92)", borderRadius: 16, padding: "12px 22px",
+              fontSize: 14, fontWeight: 700, color: "#4a90c0", border: "none", cursor: "pointer", fontFamily: font,
+              boxShadow: "0 4px 14px rgba(74,144,192,0.4)",
+            }}>
+              🎣 รอปลากินเหยื่อ... <span style={{ fontSize: 12, color: "#8a8a7a" }}>(อย่าเพิ่งดึง!)</span>
+            </button>
+          ) : (
+            <button onClick={() => G.reelFishing()} style={{
+              padding: "16px 40px", borderRadius: 999, border: "none", cursor: "pointer",
+              fontSize: 20, fontWeight: 800, fontFamily: font, color: "#fff",
+              background: "linear-gradient(90deg,#e0788a,#f5a623)",
+              boxShadow: "0 6px 20px rgba(224,120,138,0.6)",
+              animation: "pulse 0.4s infinite alternate",
+            }}>❗ ดึงเบ็ด! ❗</button>
+          )}
+        </div>
+      )}
+
+      {/* ===== title / class selection ===== */}
+      {ui.mode === "create" && (
+        <div style={{
+          position: "absolute", left: 0, right: 0, bottom: 0,
+          padding: "8px 0 12px", pointerEvents: "none",
+          background: "linear-gradient(180deg,rgba(238,242,223,0),rgba(238,242,223,0.85) 40%)",
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "#8a5a4a", textShadow: "0 1px 3px rgba(255,255,255,0.9)", textAlign: "center", marginBottom: 6 }}>⚔️ เลือกสายอาชีพเพื่อเริ่ม! (ปัดดูเพิ่ม →)</div>
+          <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 12px 4px", pointerEvents: "auto", WebkitOverflowScrolling: "touch" }}>
+            {Object.entries(CLASSES).map(([id, C]) => (
+              <button key={id} onClick={() => G.startGame(id)} style={{
+                flex: "0 0 auto", width: 100, padding: "8px 6px", borderRadius: 14, border: "none", cursor: "pointer",
+                background: "#fff", fontFamily: font, textAlign: "center",
+                boxShadow: `0 4px 12px #${C.color.toString(16).padStart(6, "0")}55`,
+                borderTop: `4px solid #${C.color.toString(16).padStart(6, "0")}`,
+              }}>
+                <div style={{ fontSize: 24 }}>{C.emoji}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 800, color: `#${C.color.toString(16).padStart(6, "0")}` }}>{C.name}</div>
+                <div style={{ fontSize: 10, color: "#6a8a5a", fontWeight: 700, marginTop: 2 }}>
+                  ❤️{C.hp} ⚔️{C.atk} 🛡️{C.def}
+                </div>
+                <div style={{ fontSize: 9, color: "#c09020", fontWeight: 700, marginTop: 2 }}>
+                  🌟 {ULTS[id].name}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ===== explore HUD ===== */}
+      {(ui.mode === "explore" || ui.mode === "battle") && (
+        <div style={{
+          position: "absolute", top: 12, left: 12, background: "#fff",
+          borderRadius: 14, padding: "7px 11px", width: 150, maxWidth: "42vw",
+          boxShadow: "0 4px 12px rgba(90,120,70,0.25)", pointerEvents: "none",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 3, overflow: "hidden" }}>
+            <span style={{ fontSize: 12, flexShrink: 0 }}>{ui.cls ? CLASSES[ui.cls].emoji : "🍒"}</span>
+            {/* 🏃 name scrolls if too long, else static */}
+            <div style={{ flex: 1, overflow: "hidden", position: "relative", height: 15 }}>
+              <div style={{
+                fontSize: 11, fontWeight: 800, color: "#8a5a4a", whiteSpace: "nowrap",
+                position: "absolute", left: 0, top: 0,
+                animation: (ui.playerName || "").length > 8 ? "hudscroll 7s linear infinite" : "none",
+              }}>
+                {ui.playerName || "เชอร์รี่"}{ui.cls ? ` · ${CLASSES[ui.cls].name}` : ""} Lv.{ui.level}
+                {(ui.playerName || "").length > 8 && <span style={{ paddingLeft: 30 }}>{ui.playerName} · {ui.cls ? CLASSES[ui.cls].name : ""} Lv.{ui.level}</span>}
+              </div>
+            </div>
+            {ui.ngPlus > 0 && <span style={{ fontSize: 8.5, fontWeight: 800, color: "#fff", background: "#d9536b", borderRadius: 999, padding: "1px 5px", flexShrink: 0 }}>NG+{ui.ngPlus}</span>}
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#7a8aa8", flexShrink: 0 }}>{ui.dayPhase || ""}</span>
+          </div>
+          {hpBar(ui.hp, ui.maxHp, "#7fd08a")}
+          <div style={{ fontSize: 9.5, color: "#a3796a", marginTop: 2 }}>
+            HP {ui.hp}/{ui.maxHp} · EXP {ui.exp}/{ui.expNext}
+          </div>
+          {/* 💧 mana bar */}
+          <div style={{ background: "#dbe8f0", borderRadius: 99, height: 6, marginTop: 3, overflow: "hidden" }}>
+            <div style={{
+              width: `${ui.maxMp ? Math.min(100, (ui.mp / ui.maxMp) * 100) : 0}%`, height: "100%",
+              background: "linear-gradient(90deg,#4a90e0,#6ac0f0)", borderRadius: 99, transition: "width 0.3s",
+            }}/>
+          </div>
+          <div style={{ fontSize: 9.5, color: "#4a90c0", fontWeight: 700, marginTop: 2 }}>
+            💧 มานา {ui.mp || 0}/{ui.maxMp || 0}
+          </div>
+          <div style={{ fontSize: 10.5, color: "#8a5a4a", marginTop: 2 }}>
+            ⚔️{ui.atk} 🛡️{ui.def} 💰{ui.gold} · 💗×{ui.balls} · 🐾×{totalCaught}
+          </div>
+        </div>
+      )}
+
+      {/* ⏰ event banner */}
+      {ui.eventMsg && (ui.mode === "explore" || ui.mode === "battle") && (
+        <div style={{
+          position: "absolute", top: ui.mode === "battle" ? 128 : 84, left: 0, right: 0,
+          display: "flex", justifyContent: "center", pointerEvents: "none",
+        }}>
+          <div style={{
+            background: "linear-gradient(90deg,#d9536b,#9a6ad0)", borderRadius: 999,
+            padding: "5px 16px", fontSize: 12, fontWeight: 800, color: "#fff",
+            boxShadow: "0 4px 14px rgba(150,80,160,0.45)", maxWidth: "70%", textAlign: "center",
+          }}>
+            {ui.eventMsg} ⏱️{ui.eventLeft}s
+          </div>
+        </div>
+      )}
+
+      {/* 🗼 dungeon floor pill */}
+      {ui.mode === "battle" && ui.dungeonFloor > 0 && (
+        <div style={{
+          position: "absolute", top: 160, left: 0, right: 0,
+          display: "flex", justifyContent: "center", pointerEvents: "none",
+        }}>
+          <div style={{
+            background: "#4a1a8a", borderRadius: 999, padding: "5px 16px",
+            fontSize: 13, fontWeight: 800, color: "#e8d8ff",
+            boxShadow: "0 4px 12px rgba(74,26,138,0.5)", pointerEvents: "auto",
+            display: "flex", alignItems: "center", gap: 10,
+          }}>
+            🗼 หอคอยมิติ — ชั้น {ui.dungeonFloor}/100
+            <span onClick={() => G.exitDungeon()} style={{
+              cursor: "pointer", background: "rgba(255,255,255,0.2)", borderRadius: 999,
+              padding: "2px 10px", fontSize: 11.5,
+            }}>🚪 ออก</span>
+          </div>
+        </div>
+      )}
+
+      {/* 🗼 dungeon entrance prompt */}
+      {ui.dungeonAsk && ui.mode === "explore" && (
+        <div style={{
+          position: "absolute", top: "32%", left: 0, right: 0,
+          display: "flex", justifyContent: "center",
+        }}>
+          <div style={{
+            background: "#fff", borderRadius: 18, padding: "16px 22px", textAlign: "center",
+            boxShadow: "0 8px 24px rgba(74,26,138,0.4)", maxWidth: 300,
+          }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "#4a1a8a" }}>🗼 ประตูมิติสั่นสะเทือน...</div>
+            <div style={{ fontSize: 12.5, color: "#8a7a9a", margin: "8px 0", lineHeight: 1.7 }}>
+              หอคอย 100 ชั้น ยิ่งลึกยิ่งโหด<br/>
+              👑 บอสทุก 10 ชั้น · ของรางวัลทวีคูณ<br/>
+              พิชิตครบ 100 ชั้น รับ +3000💰 + มังกร 🐉<br/>
+              ⚠️ แพ้ = ดีดออก (แต่จำด่านล่าสุดให้!)
+              {ui.dungeonProgress > 1 && (
+                <><br/><b style={{ color: "#6a2ad0" }}>▶ เล่นต่อจากชั้น {ui.dungeonProgress}</b></>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              <button onClick={() => G.enterDungeon()} style={{
+                padding: "10px 22px", borderRadius: 999, border: "none", cursor: "pointer",
+                fontSize: 14, fontWeight: 800, fontFamily: font, color: "#fff",
+                background: "linear-gradient(90deg,#6a2ad0,#9a6ad0)",
+              }}>⚔️ {ui.dungeonProgress > 1 ? `ลุยต่อชั้น ${ui.dungeonProgress}` : "เข้าเลย!"}</button>
+              <button onClick={() => G.declineDungeon()} style={{
+                padding: "10px 18px", borderRadius: 999, border: "none", cursor: "pointer",
+                fontSize: 14, fontWeight: 700, fontFamily: font, color: "#8a5a4a", background: "#f3ede4",
+              }}>ไว้ก่อน</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* toast */}
+      {ui.toast && Date.now() - ui.toastAt < 1700 && (
+        <div key={ui.toastAt} style={{
+          position: "absolute", top: "26%", left: 0, right: 0,
+          display: "flex", justifyContent: "center", pointerEvents: "none",
+        }}>
+          <div style={{
+            background: "#fff", borderRadius: 999, padding: "7px 20px",
+            fontSize: 15, fontWeight: 800, color: "#5a7a4a",
+            boxShadow: "0 5px 14px rgba(90,120,70,0.3)",
+            animation: "toastUp 1.7s ease forwards",
+          }}>
+            {ui.toast}
+          </div>
+        </div>
+      )}
+
+      {/* ===== explore controls ===== */}
+      {ui.mode === "explore" && (
+        <>
+          {/* AUTO hunt toggle */}
+          <button
+            onClick={() => G.toggleAuto()}
+            style={{
+              position: "absolute", top: 12, right: 12,
+              padding: "9px 18px", borderRadius: 999, border: "none", cursor: "pointer",
+              fontSize: 13.5, fontWeight: 800, fontFamily: font,
+              color: ui.auto ? "#fff" : "#59a0e8",
+              background: ui.auto ? "linear-gradient(90deg,#59a0e8,#9a6ad0)" : "#fff",
+              boxShadow: ui.auto ? "0 4px 14px rgba(89,160,232,0.5)" : "0 3px 10px rgba(90,120,70,0.25)",
+            }}
+          >
+            🤖 AUTO {ui.auto ? "ON" : "OFF"}
+          </button>
+          {ui.auto && (
+            <div style={{
+              position: "absolute", top: 58, right: 12, pointerEvents: "none",
+              background: "rgba(255,255,255,0.85)", borderRadius: 999, padding: "4px 12px",
+              fontSize: 11.5, fontWeight: 700, color: "#59a0e8",
+            }}>
+              กำลังออกล่ามอนสเตอร์... 🏃‍♀️💨
+            </div>
+          )}
+          {/* joystick */}
+          <div
+            ref={joyRef}
+            onPointerDown={joyStart}
+            onPointerMove={joyMove}
+            onPointerUp={joyEnd}
+            onPointerCancel={joyEnd}
+            style={{
+              position: "absolute", left: 18, bottom: 24,
+              width: 120, height: 120, borderRadius: "50%",
+              background: "rgba(255,255,255,0.45)", border: "3px solid rgba(122,160,91,0.5)",
+              touchAction: "none", display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 4px 14px rgba(90,120,70,0.2)",
+            }}
+          >
+            <div ref={knobRef} style={{
+              width: 52, height: 52, borderRadius: "50%", background: "#7ba05b",
+              boxShadow: "0 3px 10px rgba(122,160,91,0.5)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 20, pointerEvents: "none",
+            }}>🍒</div>
+          </div>
+
+          {/* zoom */}
+          <div style={{ position: "absolute", right: 14, top: "32%", display: "flex", flexDirection: "column", gap: 8 }}>
+            {[["＋", -1.6], ["－", 1.6]].map(([sym, d]) => (
+              <button key={sym} onClick={() => G.zoom(d)} style={{
+                width: 44, height: 44, borderRadius: "50%", border: "none", cursor: "pointer",
+                fontSize: 20, fontWeight: 800, color: "#5a7a4a", background: "rgba(255,255,255,0.85)",
+                boxShadow: "0 3px 9px rgba(90,120,70,0.3)", fontFamily: font,
+              }}>{sym}</button>
+            ))}
+          </div>
+
+          {/* shop button */}
+          <button
+            onClick={() => setUi((u) => ({ ...u, shopOpen: !u.shopOpen, invOpen: false, panelOpen: false }))}
+            style={{
+              position: "absolute", right: 12, bottom: 28,
+              width: 50, height: 50, borderRadius: 15, border: "none", cursor: "pointer",
+              fontSize: 26, background: "#fff", boxShadow: "0 4px 12px rgba(90,120,70,0.3)",
+            }}
+          >
+            🏪
+          </button>
+
+          {/* shop panel */}
+          {ui.shopOpen && (
+            <div style={{
+              position: "absolute", right: 72, bottom: 28, width: 270, maxHeight: "60vh", overflowY: "auto",
+              background: "#fff", borderRadius: 16, padding: 12,
+              boxShadow: "0 6px 20px rgba(90,120,70,0.3)",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 14, fontWeight: 800, color: "#5a7a4a" }}>🏪 ร้านค้าเร่</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: "#c09020" }}>💰 {ui.gold}</span>
+              </div>
+              {/* 🧪💧 consumables — always in stock */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#8a8a7a", marginBottom: 4 }}>ของใช้ (ซื้อได้ไม่จำกัด)</div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                <button onClick={() => G.buyPotion()} style={{
+                  flex: 1, padding: "8px 4px", borderRadius: 10, border: "none",
+                  cursor: ui.gold >= 40 ? "pointer" : "not-allowed", fontFamily: font,
+                  background: ui.gold >= 40 ? "#eaf7ec" : "#eee", opacity: ui.gold >= 40 ? 1 : 0.6,
+                }}>
+                  <div style={{ fontSize: 20 }}>🧪</div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: "#5aa06a" }}>น้ำยาเลือด</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#c09020" }}>40💰 (มี {ui.potions})</div>
+                </button>
+                <button onClick={() => G.buyManaPotion()} style={{
+                  flex: 1, padding: "8px 4px", borderRadius: 10, border: "none",
+                  cursor: ui.gold >= 40 ? "pointer" : "not-allowed", fontFamily: font,
+                  background: ui.gold >= 40 ? "#e8f2fb" : "#eee", opacity: ui.gold >= 40 ? 1 : 0.6,
+                }}>
+                  <div style={{ fontSize: 20 }}>💧</div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: "#4a90c0" }}>น้ำยามานา</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#c09020" }}>40💰 (มี {ui.mpPotions || 0})</div>
+                </button>
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#8a8a7a", marginBottom: 4 }}>อุปกรณ์</div>
+              {ui.shop.length === 0 && (
+                <div style={{ fontSize: 12.5, color: "#a3a396" }}>สินค้าหมดแล้ว กดสุ่มใหม่ได้เลย</div>
+              )}
+              {ui.shop.map((id, si) => {
+                const it = LOOT.find((x) => x.id === id);
+                if (!it) return null;
+                const price = (G.sellPrice ? G.sellPrice(id) : 0) * 3;
+                const afford = ui.gold >= price;
+                return (
+                  <div key={si} style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "7px 8px", borderRadius: 10, marginBottom: 4, background: "#f7f7f0",
+                  }}>
+                    <span style={{ fontSize: 20 }}>{it.emoji}</span>
+                    <span style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: RARITY[it.rarity].color }}>{it.name}</div>
+                      <div style={{ fontSize: 10, color: "#8a8a7a" }}>[{RARITY[it.rarity].name}] {SLOT_NAMES[it.slot]}</div>
+                    </span>
+                    <button
+                      onClick={() => afford && G.buyItem(id, si)}
+                      style={{
+                        padding: "6px 10px", borderRadius: 8, border: "none",
+                        cursor: afford ? "pointer" : "not-allowed",
+                        fontSize: 11.5, fontWeight: 800, fontFamily: font,
+                        color: afford ? "#fff" : "#a8a89a",
+                        background: afford ? "#c09020" : "#e8e8de",
+                      }}
+                    >
+                      ซื้อ {price}💰
+                    </button>
+                  </div>
+                );
+              })}
+              <button
+                onClick={() => G.refreshShop(false)}
+                style={{
+                  width: "100%", marginTop: 4, padding: "7px 0", borderRadius: 8, border: "none",
+                  cursor: "pointer", fontSize: 12, fontWeight: 800, fontFamily: font,
+                  color: "#5a7a4a", background: "#eaf5e0",
+                }}
+              >
+                🎲 สุ่มสินค้าใหม่ (30💰)
+              </button>
+              <div style={{ fontSize: 10.5, color: "#a3a396", marginTop: 6, textAlign: "center" }}>
+                ขายของได้ในกระเป๋า 🎒 · ชนะมอนสเตอร์ได้ทอง
+              </div>
+            </div>
+          )}
+
+          {/* potion button */}
+          <button
+            onClick={() => G.usePotion()}
+            style={{
+              position: "absolute", right: 12, bottom: 82,
+              width: 50, height: 50, borderRadius: 15, border: "none", cursor: "pointer",
+              fontSize: 24, background: ui.potions > 0 ? "#fff" : "rgba(255,255,255,0.5)",
+              boxShadow: "0 4px 12px rgba(90,120,70,0.3)",
+            }}
+          >
+            🧪
+            <span style={{
+              position: "absolute", top: -5, right: -5, minWidth: 20, height: 20,
+              borderRadius: 10, background: ui.potions > 0 ? "#5aa06a" : "#b0a396", color: "#fff",
+              fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+            }}>{ui.potions}</span>
+          </button>
+
+          {/* collection button */}
+          <button
+            onClick={() => setUi((u) => ({ ...u, panelOpen: !u.panelOpen, invOpen: false }))}
+            style={{
+              position: "absolute", right: 12, bottom: 136,
+              width: 50, height: 50, borderRadius: 15, border: "none", cursor: "pointer",
+              fontSize: 24, background: "#fff", boxShadow: "0 4px 12px rgba(90,120,70,0.3)",
+            }}
+          >
+            🐾
+          </button>
+
+          {/* ⚡ skill upgrade button */}
+          <button
+            onClick={() => setUi((u) => ({ ...u, skillPanel: !u.skillPanel }))}
+            style={{
+              position: "absolute", right: 12, bottom: 298,
+              width: 50, height: 50, borderRadius: 15, border: "none", cursor: "pointer",
+              fontSize: 24, background: "#fff", boxShadow: "0 4px 12px rgba(90,120,70,0.3)",
+            }}
+          >
+            ⚡
+            {((ui.sp || 0) + (ui.statPts || 0)) > 0 && (
+              <span style={{
+                position: "absolute", top: -5, right: -5, minWidth: 20, height: 20,
+                borderRadius: 10, background: "#9a6ad0", color: "#fff",
+                fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+              }}>{(ui.sp || 0) + (ui.statPts || 0)}</span>
+            )}
+          </button>
+
+          {/* ⚡ skill upgrade panel */}
+          {ui.skillPanel && (
+            <div style={{
+              position: "absolute", right: 72, bottom: 28, width: 260, maxHeight: "60vh", overflowY: "auto",
+              background: "#fff", borderRadius: 16, padding: 12,
+              boxShadow: "0 6px 20px rgba(90,120,70,0.3)",
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#5a7a4a", marginBottom: 4 }}>
+                ⚡ อัพเกรดสกิลอาชีพ
+              </div>
+              {/* 💪 base stats allocation */}
+              <div style={{ background: "linear-gradient(135deg,#f0f6ff,#f6f0ff)", borderRadius: 12, padding: "9px 10px", marginBottom: 10, border: "1.5px solid #c0d0f0" }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: "#4a6ac0" }}>💪 ค่าสถานะพื้นฐาน <span style={{ color: "#9a6ad0" }}>· มี {ui.statPts || 0} แต้ม</span></div>
+                <div style={{ fontSize: 9.5, color: "#7a8aa8", margin: "2px 0 6px" }}>ได้ 2 แต้ม/เลเวล · ยิ่งอัพสูงยิ่งใช้แต้มเพิ่ม (ทุก 10 ระดับ +1 แต้ม)</div>
+                {Object.entries(G.STAT_INFO || {}).map(([k, inf]) => {
+                  const rank = (ui.baseStats || {})[k] || 0;
+                  const cost = 1 + Math.floor(rank / 10);
+                  const can = (ui.statPts || 0) >= cost && rank < 50;
+                  return (
+                    <div key={k} style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
+                      <span style={{ fontSize: 12, width: 18 }}>{inf.emoji}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 10.5, fontWeight: 800, color: "#5a5a6a" }}>{inf.name} <span style={{ color: "#9aa" }}>Lv.{rank}</span></div>
+                        <div style={{ fontSize: 8.5, color: "#9aa0b0" }}>{inf.per}</div>
+                      </div>
+                      <button onClick={() => G.allocStat(k)} disabled={!can} style={{
+                        width: 44, height: 26, borderRadius: 8, border: "none", cursor: can ? "pointer" : "default",
+                        fontSize: 10.5, fontWeight: 800, fontFamily: font, color: "#fff",
+                        background: can ? "linear-gradient(90deg,#59a0e8,#7ac0f0)" : "#d0d5dd",
+                      }}>+{cost > 1 ? ` (${cost})` : "1"}</button>
+                    </div>
+                  );
+                })}
+                <button onClick={() => G.autoAllocStats()} style={{
+                  width: "100%", marginTop: 5, padding: "7px 0", borderRadius: 9, border: "none", cursor: "pointer",
+                  fontSize: 11.5, fontWeight: 800, fontFamily: font, color: "#fff",
+                  background: "linear-gradient(90deg,#5aa06a,#7ac08a)",
+                }}>🎯 อัพตามแนะนำอาชีพ{ui.cls && G.STAT_RECO && G.STAT_RECO[ui.cls] ? ` — ${G.STAT_RECO[ui.cls].desc}` : ""}</button>
+              </div>
+              <div style={{ fontSize: 11, color: "#9a6ad0", fontWeight: 800, marginBottom: 2 }}>
+                มีแต้มสกิล: {ui.sp || 0} (ได้ 3 แต้ม/เลเวล)
+              </div>
+              <div style={{ fontSize: 10, color: "#c04a4a", fontWeight: 700, marginBottom: 8 }}>
+                🔒 เพดานสกิลตอนนี้: Lv.{ui.skillCap || 1}/20 · ยิ่งสูงยิ่งใช้แต้มมาก
+              </div>
+              {(CLASS_SKILLS[ui.cls] || []).map((sk) => {
+                const rank = (ui.skillRanks && ui.skillRanks[sk.id]) || 1;
+                const cap = ui.skillCap || 1;
+                const maxed = rank >= 20;
+                const atCap = rank >= cap;
+                // damage estimate at current and next rank
+                const mult = sk.mult + sk.perLv * (rank - 1);
+                const multNext = sk.mult + sk.perLv * rank;
+                const hits = sk.hits || 1;
+                const dmgNow = Math.round((ui.atk || 8) * mult * hits);
+                const dmgNext = Math.round((ui.atk || 8) * multNext * hits);
+                const pctNow = Math.round(mult * hits * 100);
+                return (
+                  <div key={sk.id} style={{
+                    borderRadius: 12, marginBottom: 8, padding: "9px 11px", background: "#f7f7f0",
+                  }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "#5a5a4a" }}>
+                      {sk.emoji} {sk.name} <span style={{ color: "#e0a020" }}>Lv.{rank}/20</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: "#8a8a7a", margin: "3px 0 4px" }}>{sk.desc}</div>
+                    {/* 🔢 damage numbers */}
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "#d9536b", marginBottom: 4 }}>
+                      💥 พลังโจมตี ~{dmgNow} <span style={{ color: "#8a8a7a", fontWeight: 700 }}>({pctNow}% ATK{hits > 1 ? ` ×${hits}ครั้ง` : ""})</span>
+                      {!maxed && !atCap && <span style={{ color: "#5aa06a" }}> → {dmgNext}</span>}
+                    </div>
+                    {/* single progress bar: fill by rank, faint marker for cap */}
+                    <div style={{ position: "relative", background: "#e5e5da", borderRadius: 99, height: 8, marginBottom: 6, overflow: "hidden" }}>
+                      <div style={{ width: `${(rank / 20) * 100}%`, height: "100%", background: `#${sk.color.toString(16).padStart(6, "0")}`, borderRadius: 99 }}/>
+                      {cap < 20 && <div style={{ position: "absolute", top: 0, left: `${(cap / 20) * 100}%`, width: 2, height: "100%", background: "#c04a4a" }}/>}
+                    </div>
+                    <button onClick={() => G.rankSkill(sk.id)} disabled={maxed || atCap || (ui.sp || 0) < (rank < 5 ? 1 : rank < 10 ? 2 : rank < 15 ? 3 : 4)} style={{
+                      width: "100%", padding: "6px 0", borderRadius: 8, border: "none",
+                      cursor: (maxed || atCap) ? "default" : "pointer",
+                      fontSize: 12, fontWeight: 800, fontFamily: font, color: "#fff",
+                      background: maxed ? "#b0a396" : atCap ? "#d0a0a0" : "linear-gradient(90deg,#9a6ad0,#b07ae0)",
+                    }}>{maxed ? "เต็ม Lv.20 ⭐" : atCap ? `🔒 ปลดล็อกที่ Lv.${cap + 1}` : `อัพเกรด (${rank < 5 ? 1 : rank < 10 ? 2 : rank < 15 ? 3 : 4} แต้ม)`}</button>
+                  </div>
+                );
+              })}
+              {/* 🌟 ULTIMATE — ranked here with the 4 skills, gated by conditions */}
+              {(() => {
+                const uc = ui.cls && ULTS[ui.cls] ? ULTS[ui.cls] : null;
+                if (!uc) return null;
+                const ur = ui.ultRank || 1;
+                const maxed = ur >= 5;
+                const req = { lv: 5 + ur * 5, skillSum: 8 + ur * 8 };
+                const cost = 3 + ur;
+                const lvOk = (ui.level || 1) >= req.lv;
+                const sumOk = (ui.ultSkillSum || 0) >= req.skillSum;
+                const spOk = (ui.sp || 0) >= cost;
+                const can = !maxed && lvOk && sumOk && spOk;
+                return (
+                  <div style={{ borderRadius: 12, marginTop: 4, padding: "10px 11px", background: "linear-gradient(135deg,#fff4e0,#ffe8f0)", border: "2px solid #f5c542" }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "#c07a10" }}>
+                      🌟 {uc.name} <span style={{ color: "#e0a020" }}>Lv.{ur}/5</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: "#8a7a5a", margin: "3px 0 5px" }}>ท่าไม้ตาย · {uc.desc}</div>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: "#5aa06a", marginBottom: 5 }}>
+                      💥 พลังท่าไม้ตาย +{Math.round((ur - 1) * 18)}%{!maxed && <span style={{ color: "#8a8a7a" }}> → +{Math.round(ur * 18)}%</span>}
+                    </div>
+                    {!maxed && (
+                      <div style={{ fontSize: 10, marginBottom: 6, lineHeight: 1.6 }}>
+                        <div style={{ color: lvOk ? "#5aa06a" : "#c04a4a", fontWeight: 700 }}>{lvOk ? "✓" : "✗"} เลเวลตัวละคร {ui.level}/{req.lv}</div>
+                        <div style={{ color: sumOk ? "#5aa06a" : "#c04a4a", fontWeight: 700 }}>{sumOk ? "✓" : "✗"} รวม 4 สกิล {ui.ultSkillSum || 0}/{req.skillSum} ระดับ</div>
+                        <div style={{ color: spOk ? "#5aa06a" : "#c04a4a", fontWeight: 700 }}>{spOk ? "✓" : "✗"} ใช้ {cost} แต้มสกิล (มี {ui.sp || 0})</div>
+                      </div>
+                    )}
+                    <div style={{ position: "relative", background: "#e5e5da", borderRadius: 99, height: 8, marginBottom: 6, overflow: "hidden" }}>
+                      <div style={{ width: `${(ur / 5) * 100}%`, height: "100%", background: "linear-gradient(90deg,#f5a623,#f5d05a)", borderRadius: 99 }}/>
+                    </div>
+                    <button onClick={() => G.rankUlt()} disabled={!can} style={{
+                      width: "100%", padding: "7px 0", borderRadius: 8, border: "none",
+                      cursor: can ? "pointer" : "default",
+                      fontSize: 12, fontWeight: 800, fontFamily: font, color: "#fff",
+                      background: maxed ? "#b0a396" : can ? "linear-gradient(90deg,#f5a623,#f5763a)" : "#d0c0a0",
+                    }}>{maxed ? "สุดยอดแล้ว Lv.5 ⭐" : can ? `ปลุกพลังท่าไม้ตาย (${cost} แต้ม)` : "🔒 ยังไม่ครบเงื่อนไข"}</button>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* 📜 quest button */}
+          <button
+            onClick={() => setUi((u) => ({ ...u, questOpen: !u.questOpen, invOpen: false, panelOpen: false }))}
+            style={{
+              position: "absolute", right: 12, bottom: 244,
+              width: 50, height: 50, borderRadius: 15, border: "none", cursor: "pointer",
+              fontSize: 26, background: "#fff", boxShadow: "0 4px 12px rgba(90,120,70,0.3)",
+            }}
+          >
+            📜
+            {ui.quests.filter((q) => q.done && !q.claimed).length > 0 && (
+              <span style={{
+                position: "absolute", top: -5, right: -5, minWidth: 20, height: 20,
+                borderRadius: 10, background: "#f5a623", color: "#fff",
+                fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+              }}>{ui.quests.filter((q) => q.done && !q.claimed).length}</span>
+            )}
+          </button>
+
+          {/* bag button */}
+          <button
+            onClick={() => setUi((u) => ({ ...u, invOpen: !u.invOpen, panelOpen: false }))}
+            style={{
+              position: "absolute", right: 12, bottom: 190,
+              width: 50, height: 50, borderRadius: 15, border: "none", cursor: "pointer",
+              fontSize: 26, background: "#fff", boxShadow: "0 4px 12px rgba(90,120,70,0.3)",
+            }}
+          >
+            🎒
+            {ui.inv.length > 0 && (
+              <span style={{
+                position: "absolute", top: -5, right: -5, minWidth: 20, height: 20,
+                borderRadius: 10, background: "#d9536b", color: "#fff",
+                fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+              }}>{ui.inv.length}</span>
+            )}
+          </button>
+
+          {/* equipment panel */}
+          {/* 📜 quest panel */}
+          {ui.questOpen && (
+            <div style={{
+              position: "absolute", right: 72, bottom: 28, width: 280, maxHeight: "60vh", overflowY: "auto",
+              background: "#fff", borderRadius: 16, padding: 12,
+              boxShadow: "0 6px 20px rgba(90,120,70,0.3)",
+            }}>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                <button onClick={() => setUi((u) => ({ ...u, achTab: false }))} style={{
+                  flex: 1, padding: "6px 0", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: font,
+                  fontSize: 12, fontWeight: 800, color: !ui.achTab ? "#fff" : "#5a7a4a",
+                  background: !ui.achTab ? "#f5a623" : "#fdf0d8",
+                }}>📜 ภารกิจ</button>
+                <button onClick={() => setUi((u) => ({ ...u, achTab: true, achUnlocked: { ...G.achUnlocked } }))} style={{
+                  flex: 1, padding: "6px 0", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: font,
+                  fontSize: 12, fontWeight: 800, color: ui.achTab ? "#fff" : "#5a7a4a",
+                  background: ui.achTab ? "#f5a623" : "#fdf0d8",
+                }}>🏅 ความสำเร็จ</button>
+              </div>
+              {ui.achTab ? (
+                <div>
+                  {(() => {
+                    const done = G.ACHIEVEMENTS.filter((a) => ui.achUnlocked && ui.achUnlocked[a.id]).length;
+                    return <div style={{ fontSize: 11, fontWeight: 800, color: "#c09020", marginBottom: 8 }}>ปลดล็อกแล้ว {done}/{G.ACHIEVEMENTS.length} 🏅</div>;
+                  })()}
+                  {G.ACHIEVEMENTS.map((a) => {
+                    const got = ui.achUnlocked && ui.achUnlocked[a.id];
+                    return (
+                      <div key={a.id} style={{
+                        display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
+                        borderRadius: 10, marginBottom: 6,
+                        background: got ? "#fff7e8" : "#f3f3ee",
+                        border: got ? "2px solid #f5c542" : "2px solid transparent",
+                        opacity: got ? 1 : 0.7,
+                      }}>
+                        <span style={{ fontSize: 24, filter: got ? "none" : "grayscale(1)" }}>{got ? a.emoji : "🔒"}</span>
+                        <span style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 800, color: got ? "#c09020" : "#8a8a7a" }}>{a.name}</div>
+                          <div style={{ fontSize: 10, color: "#8a8a7a" }}>{a.desc} · 🎁 {a.reward}💰</div>
+                        </span>
+                        {got && <span style={{ fontSize: 12, fontWeight: 800, color: "#5aa06a" }}>✓</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+              <>
+              <div style={{ fontSize: 10.5, color: "#a3a396", marginBottom: 8 }}>
+                ทำภารกิจสำเร็จแล้วกดรับ EXP + ทองก้อนโต
+              </div>
+              {ui.quests.filter((q) => !q.claimed).map((q, i) => {
+                const realIdx = ui.quests.indexOf(q);
+                return (
+                  <div key={i} style={{
+                    borderRadius: 12, marginBottom: 8, padding: "9px 11px",
+                    background: q.done ? "#f0f9e8" : "#f7f7f0",
+                    border: q.done ? "2px solid #7ba05b" : "2px solid transparent",
+                  }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "#5a5a4a" }}>
+                      {q.emoji} {q.label}
+                    </div>
+                    <div style={{ background: "#e5e5da", borderRadius: 999, height: 8, overflow: "hidden", margin: "6px 0" }}>
+                      <div style={{ width: `${(q.prog / q.target) * 100}%`, height: "100%", background: q.done ? "#7ba05b" : "#f5a623", transition: "width 0.3s" }}/>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 11, color: "#8a8a7a" }}>{q.prog}/{q.target} · 🎁 +{q.exp}EXP +{q.gold}💰</span>
+                      {q.done && (
+                        <button onClick={() => G.claimQuest(realIdx)} style={{
+                          padding: "5px 14px", borderRadius: 999, border: "none", cursor: "pointer",
+                          fontSize: 12, fontWeight: 800, fontFamily: font, color: "#fff",
+                          background: "linear-gradient(90deg,#f5a623,#f5c542)",
+                        }}>รับรางวัล</button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              </>
+              )}
+            </div>
+          )}
+
+          {ui.invOpen && (
+            <div style={{
+              position: "absolute", right: 72, bottom: 28, width: 260, maxHeight: "60vh", overflowY: "auto",
+              background: "#fff", borderRadius: 16, padding: 12,
+              boxShadow: "0 6px 20px rgba(90,120,70,0.3)",
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#5a7a4a", marginBottom: 6 }}>
+                🎒 กระเป๋าอุปกรณ์ — แตะเพื่อสวมใส่
+              </div>
+              {/* auto buttons */}
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                <button onClick={() => G.autoEquip()} style={{
+                  flex: 1, padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer",
+                  fontSize: 12, fontWeight: 800, fontFamily: font, color: "#fff",
+                  background: "linear-gradient(90deg,#7ba05b,#5aa06a)",
+                }}>🎽 สวมใส่ออโต้</button>
+                <button onClick={() => G.autoEnhanceAll()} style={{
+                  flex: 1, padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer",
+                  fontSize: 12, fontWeight: 800, fontFamily: font, color: "#fff",
+                  background: "linear-gradient(90deg,#59a0e8,#7ad0e8)",
+                }}>⚒️ ตีบวกออโต้</button>
+              </div>
+              {/* 💰 auto-sell row */}
+              <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                <button onClick={() => G.autoSell()} style={{
+                  flex: 1, padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer",
+                  fontSize: 12, fontWeight: 800, fontFamily: font, color: "#fff",
+                  background: "linear-gradient(90deg,#e0a020,#f5c542)",
+                }}>💰 ขายของเกินออโต้</button>
+                <button onClick={() => setUi((u) => ({ ...u, sellSetup: !u.sellSetup }))} style={{
+                  padding: "8px 12px", borderRadius: 10, border: "none", cursor: "pointer",
+                  fontSize: 12, fontWeight: 800, fontFamily: font, color: "#8a5a4a",
+                  background: ui.sellSetup ? "#f0d0a0" : "#f3ede4",
+                }}>⚙️ ลำดับ</button>
+              </div>
+              {ui.sellSetup && (
+                <div style={{ background: "#faf6ee", borderRadius: 12, padding: "8px 10px", marginBottom: 8 }}>
+                  <div style={{ fontSize: 10.5, color: "#8a7a5a", marginBottom: 6, lineHeight: 1.5 }}>
+                    ⚙️ ลำดับความสำคัญ (บนก่อน) — ระบบเก็บของดีสุด + ของซ้ำ  1 ชิ้นไว้ตีบวก แล้วขายที่เหลือ เริ่มจากเรตต่ำก่อน
+                  </div>
+                  {(ui.sellPriority || SLOTS).map((slot, i) => (
+                    <div key={slot} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", background: "#fff", borderRadius: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: "#8a5a4a", width: 18 }}>{i + 1}.</span>
+                      <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: "#5a5a4a" }}>{SLOT_NAMES[slot]}</span>
+                      <button onClick={() => G.moveSellPriority(slot, -1)} disabled={i === 0} style={{
+                        width: 26, height: 26, borderRadius: 6, border: "none", cursor: i === 0 ? "default" : "pointer",
+                        fontSize: 13, background: i === 0 ? "#eee" : "#e0e8d0", color: "#5a7a4a", fontWeight: 800,
+                      }}>▲</button>
+                      <button onClick={() => G.moveSellPriority(slot, 1)} disabled={i === (ui.sellPriority || SLOTS).length - 1} style={{
+                        width: 26, height: 26, borderRadius: 6, border: "none", cursor: i === (ui.sellPriority || SLOTS).length - 1 ? "default" : "pointer",
+                        fontSize: 13, background: i === (ui.sellPriority || SLOTS).length - 1 ? "#eee" : "#e0e8d0", color: "#5a7a4a", fontWeight: 800,
+                      }}>▼</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ fontSize: 10, color: "#a3a396", marginBottom: 6, textAlign: "center" }}>
+                🎽 ใส่ของแรงสุดทุกช่อง · ⚒️ ตีของซ้ำถึงเพดาน +{G.enhanceCap ? G.enhanceCap() : 1} (ตามเลเวล)
+              </div>
+              <div style={{ fontSize: 11, color: "#a3a396", marginBottom: 6, lineHeight: 1.6 }}>
+                สวมอยู่: {SLOTS.map((s) => {
+                  const it = LOOT.find((x) => x.id === ui.equip[s]);
+                  return `${it ? it.emoji : "▫️"}`;
+                }).join(" ")}
+              </div>
+              {(() => {
+                const dn = SLOTS.filter((s) => {
+                  const it = LOOT.find((x) => x.id === ui.equip[s]);
+                  return it && it.rarity === "dragon";
+                }).length;
+                return dn > 0 ? (
+                  <div style={{
+                    fontSize: 11, fontWeight: 800, color: "#e8552e",
+                    background: "#fdf0ea", borderRadius: 8, padding: "5px 8px", marginBottom: 6, lineHeight: 1.6,
+                  }}>
+                    🐉 เซ็ตมังกร {dn}/7
+                    {dn >= 3 && " · ⚔️+8"}
+                    {dn >= 5 && " · 🛡️+6 ❤️+30"}
+                    {dn >= 7 && " · 🔥ครบเซ็ต! +12/+40/+6/👟+10"}
+                  </div>
+                ) : null;
+              })()}
+              {ui.inv.length === 0 && (
+                <div style={{ fontSize: 12.5, color: "#a3a396" }}>ยังว่างเปล่า ชนะมอนสเตอร์เพื่อลุ้นดรอป!</div>
+              )}
+              {/* 🔀 sort options */}
+              <div style={{ display: "flex", gap: 4, marginBottom: 6, alignItems: "center" }}>
+                <span style={{ fontSize: 10.5, color: "#a3a396", fontWeight: 700 }}>เรียง:</span>
+                {[["rarity", "💎 หายาก"], ["slot", "🧩 ประเภท"], ["plus", "⚒️ ตีบวก"]].map(([mk, label]) => (
+                  <button key={mk} onClick={() => setUi((u) => ({ ...u, sortMode: mk }))} style={{
+                    padding: "4px 10px", borderRadius: 999, border: "none", cursor: "pointer",
+                    fontSize: 10.5, fontWeight: 800, fontFamily: font,
+                    background: ui.sortMode === mk ? "#7ba05b" : "#f3ede4",
+                    color: ui.sortMode === mk ? "#fff" : "#8a5a4a",
+                  }}>{label}</button>
+                ))}
+              </div>
+              {[...new Set(ui.inv)].sort((a, b) => {
+                const ia = LOOT.find((x) => x.id === a), ib = LOOT.find((x) => x.id === b);
+                const eqA = ui.equip[ia.slot] === a ? 0 : 1, eqB = ui.equip[ib.slot] === b ? 0 : 1;
+                if (eqA !== eqB) return eqA - eqB; // ✅ equipped pinned on top
+                const pa = ui.plus[a] || 0, pb = ui.plus[b] || 0;
+                const ta = TIER[ia.rarity], tb = TIER[ib.rarity];
+                if (ui.sortMode === "slot") {
+                  if (ia.slot !== ib.slot) return SLOTS.indexOf(ia.slot) - SLOTS.indexOf(ib.slot);
+                  return tb - ta || pb - pa;
+                }
+                if (ui.sortMode === "plus") return pb - pa || tb - ta;
+                return tb - ta || pb - pa || SLOTS.indexOf(ia.slot) - SLOTS.indexOf(ib.slot); // rarity (default)
+              }).map((id) => {
+                const it = LOOT.find((x) => x.id === id);
+                const count = ui.inv.filter((x) => x === id).length;
+                const equipped = ui.equip[it.slot] === id;
+                const plus = ui.plus[id] || 0;
+                const m = 1 + 0.2 * plus;
+                const sv = (v) => Math.round((v || 0) * m);
+                const stats = [
+                  it.atk && `⚔️+${sv(it.atk)}`, it.hp && `❤️+${sv(it.hp)}`, it.def && `🛡️+${sv(it.def)}`,
+                  it.spd && `👟+${sv(it.spd)}%`, it.eva && `💨+${sv(it.eva)}%`, it.crit && `🎯+${sv(it.crit)}%`,
+                ].filter(Boolean).join(" ");
+                const canPlus = count >= 2 && plus < 5;
+                const rate = plus < 3 ? 100 : plus === 3 ? 70 : 50;
+                return (
+                  <div key={id} style={{
+                    borderRadius: 10, marginBottom: 4, padding: 2,
+                    border: equipped ? `2px solid ${RARITY[it.rarity].color}` : "2px solid transparent",
+                    background: equipped ? "#f5f9ef" : "#f7f7f0",
+                  }}>
+                    <button onClick={() => G.equipItem(id)} style={{
+                      display: "flex", alignItems: "center", gap: 8, width: "100%",
+                      padding: "6px 6px", border: "none", cursor: "pointer",
+                      background: "transparent", fontFamily: font, textAlign: "left",
+                    }}>
+                      <span style={{ fontSize: 20 }}>{it.emoji}</span>
+                      <span style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: RARITY[it.rarity].color }}>
+                          {it.name}{plus > 0 && <span style={{ color: "#e0a020" }}> +{plus}</span>} {count > 1 ? `×${count}` : ""}
+                          {it.req && ui.level < it.req && (
+                            <span style={{ color: "#c04a4a", fontWeight: 800 }}> 🔒Lv.{it.req}</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: "#8a8a7a" }}>
+                          [{RARITY[it.rarity].name}] {SLOT_NAMES[it.slot]} · {stats}
+                        </div>
+                      </span>
+                      {equipped && <span style={{ fontSize: 11, fontWeight: 800, color: "#7ba05b" }}>ใส่อยู่ ✓</span>}
+                    </button>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button
+                        onClick={() => canPlus && G.enhance(id)}
+                        style={{
+                          flex: 1, padding: "5px 0", borderRadius: 8, border: "none",
+                          cursor: canPlus ? "pointer" : "not-allowed",
+                          fontSize: 10.5, fontWeight: 800, fontFamily: font,
+                          color: canPlus ? "#fff" : "#a8a89a",
+                          background: canPlus ? "linear-gradient(90deg,#59a0e8,#7ad0e8)" : "#e8e8de",
+                        }}
+                      >
+                        {plus >= 5 ? "⭐ +5 เต็ม" : canPlus
+                          ? `⚒️ ตีบวก +${plus + 1} (${rate}%)`
+                          : `⚒️ ต้องมีซ้ำ (มี ${count})`}
+                      </button>
+                      {!it.starter && (
+                        <button
+                          onClick={() => G.sellItem(id)}
+                          style={{
+                            padding: "5px 10px", borderRadius: 8, border: "none", cursor: "pointer",
+                            fontSize: 10.5, fontWeight: 800, fontFamily: font,
+                            color: "#fff", background: "#c09020",
+                          }}
+                        >
+                          ขาย {G.sellPrice ? G.sellPrice(id) : 0}💰
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* collection panel */}
+          {ui.panelOpen && (
+            <div style={{
+              position: "absolute", right: 72, bottom: 28, width: 240,
+              maxHeight: "60vh", display: "flex", flexDirection: "column",
+              background: "#fff", borderRadius: 16, padding: 12,
+              boxShadow: "0 6px 20px rgba(90,120,70,0.3)",
+            }}>
+              <div style={{ display: "flex", gap: 6, marginBottom: 6, flexShrink: 0 }}>
+                <button onClick={() => setUi((u) => ({ ...u, dexTab: false }))} style={{
+                  flex: 1, padding: "6px 0", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: font,
+                  fontSize: 12, fontWeight: 800, color: !ui.dexTab ? "#fff" : "#5a7a4a",
+                  background: !ui.dexTab ? "#7ba05b" : "#eaf5e0",
+                }}>🐾 ของฉัน ({totalCaught})</button>
+                <button onClick={() => setUi((u) => ({ ...u, dexTab: true }))} style={{
+                  flex: 1, padding: "6px 0", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: font,
+                  fontSize: 12, fontWeight: 800, color: ui.dexTab ? "#fff" : "#5a7a4a",
+                  background: ui.dexTab ? "#7ba05b" : "#eaf5e0",
+                }}>📖 สมุดภาพ</button>
+              </div>
+              {/* 📖 DEX tab: all species, caught or not */}
+              {ui.dexTab ? (
+                <div style={{ overflowY: "auto", flex: 1, margin: "0 -4px", padding: "0 4px" }}>
+                  {(() => {
+                    const allIds = Object.keys(SPECIES);
+                    const caughtCount = allIds.filter((id) => ui.col[id]).length;
+                    return (
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "#c09020", marginBottom: 6 }}>
+                          สะสมแล้ว {caughtCount}/{allIds.length} ชนิด {caughtCount === allIds.length ? "🏆 ครบทุกชนิด!" : ""}
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                          {allIds.map((id) => {
+                            const sp = SPECIES[id];
+                            const got = !!ui.col[id];
+                            return (
+                              <div key={id} style={{
+                                padding: "8px 6px", borderRadius: 10, textAlign: "center",
+                                background: got ? "#f0f9e8" : "#eee",
+                                border: got ? "2px solid #b5d99a" : "2px solid transparent",
+                              }}>
+                                <div style={{ fontSize: 26, filter: got ? "none" : "grayscale(1) brightness(0.6)", opacity: got ? 1 : 0.5 }}>
+                                  {got ? sp.emoji : "❓"}
+                                </div>
+                                <div style={{ fontSize: 11, fontWeight: 800, color: got ? "#5a7a4a" : "#a3a396" }}>
+                                  {got ? sp.name : "???"}
+                                </div>
+                                {got && <div style={{ fontSize: 9, color: "#8a8a7a" }}>ธาตุ {ELEMENTS[PET_ELEM[id]].emoji} · จับ {ui.col[id]}</div>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              ) : (
+              <div style={{ overflowY: "auto", flex: 1, margin: "0 -4px", padding: "0 4px" }}>
+              {totalCaught === 0 && (
+                <div style={{ fontSize: 12.5, color: "#a3a396" }}>ยังไม่มีเลย ไปจับกันเถอะ!</div>
+              )}
+              {totalCaught > 0 && (
+                <div style={{ background: "#eaf5e0", borderRadius: 10, padding: "6px 9px", marginBottom: 8, fontSize: 11, fontWeight: 700, color: "#5a7a4a" }}>
+                  👥 ทีมร่วมรบ ({(ui.team || []).length}/3): {(ui.team || []).length ? (ui.team || []).map((id) => SPECIES[id].emoji).join(" ") : "ยังไม่มี — กด + เข้าทีม"}
+                  <div style={{ fontSize: 9.5, color: "#7a9a5a", fontWeight: 600, marginTop: 2 }}>ทุกตัวในทีมช่วยบัฟ · ตัวแรกเดินตาม+ ร่วมโจมตี</div>
+                </div>
+              )}
+              {/* 🔮 fusion */}
+              {totalCaught >= 2 && (
+                <div style={{ background: "#f0e8f8", borderRadius: 10, padding: "8px 9px", marginBottom: 8 }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: "#6a4a8a", marginBottom: 5 }}>🔮 ผสมพันธุ์ (ได้ตัวหายากขึ้น)</div>
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 5 }}>
+                    {Object.keys(ui.col).map((id) => (
+                      <button key={id} onClick={() => setUi((u) => ({ ...u, fuseA: u.fuseA === id ? null : (u.fuseB === id ? u.fuseA : (u.fuseA ? u.fuseA : id)), fuseB: u.fuseA && u.fuseA !== id && !u.fuseB ? id : (u.fuseB === id ? null : u.fuseB) }))} style={{
+                        padding: "4px 7px", borderRadius: 7, border: (ui.fuseA === id || ui.fuseB === id) ? "2px solid #9a6ad0" : "2px solid transparent",
+                        cursor: "pointer", fontSize: 15, background: "#fff",
+                      }}>{SPECIES[id].emoji}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 11, color: "#8a7a9a", flex: 1 }}>
+                      {ui.fuseA ? SPECIES[ui.fuseA].emoji : "?"} + {ui.fuseB ? SPECIES[ui.fuseB].emoji : "?"}
+                    </span>
+                    <button onClick={() => G.fusePets(ui.fuseA, ui.fuseB)} disabled={!ui.fuseA || !ui.fuseB} style={{
+                      padding: "5px 14px", borderRadius: 8, border: "none",
+                      cursor: (ui.fuseA && ui.fuseB) ? "pointer" : "default",
+                      fontSize: 11, fontWeight: 800, fontFamily: font, color: "#fff",
+                      background: (ui.fuseA && ui.fuseB) ? "linear-gradient(90deg,#9a6ad0,#d07ae0)" : "#ccc",
+                    }}>🔮 ผสม</button>
+                  </div>
+                  <div style={{ fontSize: 9, color: "#a898b8", marginTop: 3 }}>⚠️ ใช้อย่างละ 1 ตัว</div>
+                </div>
+              )}
+              {Object.entries(ui.col).map(([id, n]) => {
+                const sp = SPECIES[id];
+                const pet = ui.pets[id] || { lv: 1, exp: 0, stage: 1 };
+                const isBuddy = ui.buddy === id;
+                const dispName = pet.stage >= 3 ? `อัลติเมท${EVOLVED[id]} 🌟` : pet.stage === 2 ? `${EVOLVED[id]} 👑` : sp.name;
+                const buff = {
+                  atk: sp.tier * 2 * pet.stage + pet.lv,
+                  hp: 3 * pet.lv + 5 * (pet.stage - 1),
+                  def: (pet.stage - 1) + Math.floor(pet.lv / 2),
+                };
+                const nextEvo = Math.ceil((pet.lv + 1) / 3) * 3;
+                return (
+                  <div key={id} style={{
+                    padding: "7px 8px", borderRadius: 10, marginBottom: 4,
+                    background: isBuddy ? "#eaf5e0" : "#f7f7f0",
+                  }}>
+                    <button onClick={() => G.setBuddy(id)} style={{
+                      display: "flex", alignItems: "center", gap: 8, width: "100%",
+                      border: "none", cursor: "pointer", background: "transparent",
+                      fontFamily: font, textAlign: "left", padding: 0,
+                    }}>
+                      <span style={{ fontSize: 20 }}>{sp.emoji}</span>
+                      <span style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: pet.stage >= 3 ? "#d08a20" : pet.stage === 2 ? "#c09020" : "#5a7a4a" }}>
+                          {dispName} Lv.{pet.lv} · ร่าง {pet.stage} ×{n}
+                        </div>
+                        <div style={{ background: "#e5e5da", borderRadius: 99, height: 5, marginTop: 3, overflow: "hidden" }}>
+                          <div style={{
+                            width: `${Math.min(100, (pet.exp / (pet.lv * 30)) * 100)}%`, height: "100%",
+                            background: "#b07ae0", borderRadius: 99,
+                          }}/>
+                        </div>
+                        <div style={{ fontSize: 9.5, color: "#7a9a5a", fontWeight: 700, marginTop: 2 }}>
+                          บัฟให้เชอร์รี่: ⚔️+{buff.atk} ❤️+{buff.hp} 🛡️+{buff.def}
+                        </div>
+                        <div style={{ fontSize: 9.5, color: "#b0526a", fontWeight: 700 }}>
+                          สกิลร่วมรบ: {ELEMENTS[PET_ELEM[id]].emoji} {PET_SKILL[id]} <b style={{ color: "#8a5ad0" }}>Lv.{(ui.petSkillLv && ui.petSkillLv[id]) || 1}</b>
+                        </div>
+                        <div style={{ fontSize: 9.5, color: "#a3a396" }}>
+                          EXP {pet.exp}/{pet.lv * 30} · วิวัฒน์ร่างใหม่ที่ Lv.{nextEvo}
+                        </div>
+                      </span>
+                      {isBuddy && <span style={{ fontSize: 11, fontWeight: 800, color: "#7ba05b" }}>บัดดี้ ✓</span>}
+                    </button>
+                    {/* team + skill controls */}
+                    <div style={{ display: "flex", gap: 5, marginTop: 6 }}>
+                      <button onClick={() => G.toggleTeam(id)} style={{
+                        flex: 1, padding: "5px 0", borderRadius: 7, border: "none", cursor: "pointer",
+                        fontSize: 10.5, fontWeight: 800, fontFamily: font, color: "#fff",
+                        background: (ui.team || []).includes(id) ? "#d9536b" : "#7ba05b",
+                      }}>{(ui.team || []).includes(id) ? "− ออกทีม" : "+ เข้าทีม"}</button>
+                      <button onClick={() => G.rankPetSkill(id)} disabled={(ui.petSp || 0) <= 0} style={{
+                        flex: 1, padding: "5px 0", borderRadius: 7, border: "none",
+                        cursor: (ui.petSp || 0) > 0 ? "pointer" : "default",
+                        fontSize: 10.5, fontWeight: 800, fontFamily: font, color: "#fff",
+                        background: (ui.petSp || 0) > 0 ? "linear-gradient(90deg,#9a6ad0,#b07ae0)" : "#ccc",
+                      }}>⚡ อัพสกิล ({ui.petSp || 0})</button>
+                    </div>
+                  </div>
+                );
+              })}
+              </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ===== battle UI ===== */}
+      {ui.mode === "battle" && ui.enemy && (
+        <>
+          {/* zoom buttons in battle */}
+          <div style={{ position: "absolute", right: 12, top: "30%", display: "flex", flexDirection: "column", gap: 8 }}>
+            {[["＋", -1.6], ["－", 1.6]].map(([sym, d]) => (
+              <button key={sym} onClick={() => G.zoom(d)} style={{
+                width: 44, height: 44, borderRadius: "50%", border: "none", cursor: "pointer",
+                fontSize: 20, fontWeight: 800, color: "#5a7a4a", background: "rgba(255,255,255,0.85)",
+                boxShadow: "0 3px 9px rgba(90,120,70,0.3)", fontFamily: font,
+              }}>{sym}</button>
+            ))}
+          </div>
+          {/* enemy bar */}
+          <div style={{
+            position: "absolute", top: 12, right: 12, background: "#fff",
+            borderRadius: 14, padding: "7px 12px", width: 150, maxWidth: "42vw",
+            boxShadow: "0 4px 12px rgba(90,120,70,0.25)", pointerEvents: "none",
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: ui.enemy.boss ? "#b03060" : "#8a5a4a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {ui.enemy.boss ? "👑 บอส" : ui.enemy.emoji + " "}{ui.enemy.boss ? EVOLVED[Object.keys(SPECIES).find(k => SPECIES[k].name === ui.enemy.name)] || ui.enemy.name : ui.enemy.name + "ป่า"}{ui.enemy.shiny ? " ✨" : ""} <span style={{ color: "#d9536b" }}>Lv.{ui.enemy.lv}</span>
+            </div>
+            {hpBar(ui.enemy.hp, ui.enemy.maxHp, "#f0a05a")}
+            <div style={{ fontSize: 10.5, color: "#a3796a", marginTop: 3 }}>
+              HP {ui.enemy.hp}/{ui.enemy.maxHp}
+            </div>
+            {ui.enemy.spId && WEAK[ui.enemy.spId] && ELEM_META[WEAK[ui.enemy.spId]] && (
+              <div style={{
+                marginTop: 4, display: "inline-block",
+                background: "rgba(245,101,46,0.14)", border: "1px solid rgba(245,101,46,0.4)",
+                borderRadius: 999, padding: "2px 8px", fontSize: 10, fontWeight: 800, color: "#d9532e",
+              }}>
+                💢 อ่อนแอต่อธาตุ{ELEM_META[WEAK[ui.enemy.spId]].emoji}{ELEM_META[WEAK[ui.enemy.spId]].name}
+              </div>
+            )}
+          </div>
+          {/* 🔥 combo streak */}
+          {ui.combo >= 2 && (
+            <div style={{
+              position: "absolute", top: 88, right: 12, pointerEvents: "none",
+              background: "linear-gradient(90deg,#f5652e,#f5a623)", borderRadius: 999,
+              padding: "3px 12px", fontSize: 12.5, fontWeight: 800, color: "#fff",
+              boxShadow: "0 3px 10px rgba(245,101,46,0.5)",
+            }}>
+              🔥 คอมโบ ×{ui.combo}
+            </div>
+          )}
+
+          {/* message + actions */}
+          <div style={{
+            position: "absolute", bottom: 0, left: 0, right: 0,
+            padding: "8px 12px 12px",
+            background: "linear-gradient(transparent, rgba(238,242,223,0.9) 55%)",
+            display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+          }}>
+            <div style={{
+              background: "#fff", borderRadius: 12, padding: "6px 16px",
+              fontSize: 13, fontWeight: 700, color: "#5a5a4a", minHeight: 18,
+              boxShadow: "0 3px 10px rgba(90,120,70,0.2)", textAlign: "center", maxWidth: 380,
+            }}>
+              {ui.auto && <span style={{ color: "#59a0e8" }}>🤖 </span>}{ui.msg}
+            </div>
+            {/* class skill menu */}
+            {ui.skillMenu && ui.bstate === "choose" && (
+              <div style={{
+                background: "#fff", borderRadius: 14, padding: 10, maxWidth: 420, width: "100%",
+                boxShadow: "0 4px 14px rgba(90,120,70,0.3)",
+              }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: "#8a5a4a", marginBottom: 6 }}>
+                  ⚡ สกิลอาชีพ (ใช้มานา 💧) — ยิ่งอัพเลเวลสกิลยิ่งแรง!
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {(CLASS_SKILLS[ui.cls] || []).map((sk) => {
+                    const rank = (ui.skillRanks && ui.skillRanks[sk.id]) || 1;
+                    const cost = sk.cost || 8;
+                    const afford = (ui.mp || 0) >= cost;
+                    const mult = sk.mult + sk.perLv * (rank - 1);
+                    const hits = sk.hits || 1;
+                    const dmg = Math.round((ui.atk || 8) * mult * hits);
+                    const skEl = SKILL_ELEM[sk.id];
+                    const advantage = skEl && ui.enemy && WEAK[ui.enemy.spId] === skEl; // ⚡ hits weakness
+                    return (
+                      <button key={sk.id} onClick={() => afford && G.act("skill", sk.id)} style={{
+                        flex: "1 1 44%", minWidth: 120, padding: "8px 6px", borderRadius: 10,
+                        border: advantage ? "2px solid #f5a623" : "none", position: "relative",
+                        cursor: afford ? "pointer" : "not-allowed", textAlign: "left",
+                        background: `#${sk.color.toString(16).padStart(6, "0")}18`, fontFamily: font,
+                        opacity: afford ? 1 : 0.5,
+                      }}>
+                        {advantage && (
+                          <span style={{
+                            position: "absolute", top: -8, right: -6, background: "#f5a623", color: "#fff",
+                            fontSize: 9, fontWeight: 800, borderRadius: 999, padding: "1px 7px",
+                            boxShadow: "0 2px 6px rgba(245,166,35,0.5)",
+                          }}>⚡ ได้เปรียบ!</span>
+                        )}
+                        <div style={{ fontSize: 12.5, fontWeight: 800, color: "#5a5a4a" }}>
+                          {sk.emoji} {sk.name} <span style={{ color: "#e0a020" }}>Lv.{rank}</span>
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "#d9536b" }}>
+                          💥 ~{advantage ? Math.round(dmg * 1.5) : dmg} {hits > 1 ? `(×${hits})` : ""}{advantage ? " 🔥" : ""}
+                        </div>
+                        <div style={{ fontSize: 9.5, color: "#8a8a7a" }}>{sk.desc}</div>
+                        <div style={{ fontSize: 10, color: afford ? "#4a90c0" : "#c04a4a", fontWeight: 800 }}>💧 {cost} มานา</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <div style={{
+              display: "flex", gap: 10, flexWrap: "nowrap", justifyContent: "center",
+              maxWidth: 440, width: "100%",
+              opacity: ui.bstate === "choose" ? 1 : 0.45,
+              pointerEvents: ui.bstate === "choose" ? "auto" : "none",
+            }}>
+              {(() => {
+                const iconBtn = (icon, bg, onClick, badge, opts = {}) => (
+                  <button onClick={onClick} title={opts.title || ""} style={{
+                    position: "relative", width: 52, height: 52, borderRadius: "50%", border: "none",
+                    cursor: "pointer", fontSize: 24, background: bg,
+                    boxShadow: "0 4px 10px rgba(0,0,0,0.18)", fontFamily: font,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    {icon}
+                    {badge != null && (
+                      <span style={{
+                        position: "absolute", top: -3, right: -3, minWidth: 20, height: 20, padding: "0 3px",
+                        borderRadius: 10, background: opts.badgeBg || "#4a4a52", color: "#fff",
+                        fontSize: 11.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
+                      }}>{badge}</span>
+                    )}
+                  </button>
+                );
+                return (
+                  <>
+                    {iconBtn("⚔️", "#d9536b", () => G.act("attack"), null, { title: "โจมตี" })}
+                    {iconBtn(ui.ultUsed ? "💫" : "🌟",
+                      ui.ultUsed ? "#b0a396" : "linear-gradient(135deg,#f5c542,#e0788a)",
+                      () => G.act("ult"), null,
+                      { title: ui.cls ? `${ULTS[ui.cls].name} — ${ULTS[ui.cls].desc}` : "ท่าไม้ตาย" })}
+                    {iconBtn("⚡", "#4a90e0", () => setUi((u) => ({ ...u, skillMenu: !u.skillMenu })), Math.floor(ui.mp || 0), { title: "สกิลอาชีพ (มานา)", badgeBg: "#3a70c0" })}
+                    {iconBtn("💗", "#e0788a", () => G.act("catch"), ui.balls, { title: "จับ", badgeBg: "#c05878" })}
+                    {iconBtn("🧪", "#5aa06a", () => G.usePotion(), ui.potions, { title: "น้ำยาเพิ่มเลือด", badgeBg: "#3a8050" })}
+                    {iconBtn("💧", "#4a90c0", () => G.useManaPotion(), ui.mpPotions, { title: "น้ำยาเพิ่มมานา", badgeBg: "#3a70a0" })}
+                    {iconBtn("🏃", "#8a9aa8", () => G.act("run"), null, { title: "หนี" })}
+                  </>
+                );
+              })()}
+            </div>
+            {/* AUTO toggle — usable anytime, even mid-animation */}
+            <button
+              onClick={() => G.toggleAuto()}
+              style={{
+                padding: "6px 18px", borderRadius: 999, border: "none", cursor: "pointer",
+                fontSize: 12.5, fontWeight: 800, fontFamily: font,
+                color: ui.auto ? "#fff" : "#59a0e8",
+                background: ui.auto ? "linear-gradient(90deg,#59a0e8,#9a6ad0)" : "#fff",
+                boxShadow: ui.auto ? "0 3px 12px rgba(89,160,232,0.5)" : "0 2px 8px rgba(90,120,70,0.2)",
+              }}
+            >
+              🤖 AUTO {ui.auto ? "ON" : "OFF"}
+            </button>
+            {/* ⏩ battle speed */}
+            <button
+              onClick={() => G.cycleSpeed()}
+              style={{
+                marginLeft: 8, padding: "6px 16px", borderRadius: 999, border: "none", cursor: "pointer",
+                fontSize: 12.5, fontWeight: 800, fontFamily: font,
+                color: (ui.battleSpeed || 1) > 1 ? "#fff" : "#e0894a",
+                background: (ui.battleSpeed || 1) > 1 ? "linear-gradient(90deg,#f5a623,#e0894a)" : "#fff",
+                boxShadow: (ui.battleSpeed || 1) > 1 ? "0 3px 12px rgba(224,137,74,0.5)" : "0 2px 8px rgba(90,120,70,0.2)",
+              }}
+            >
+              ⏩ ×{ui.battleSpeed || 1}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ===== fainted ===== */}
+      {ui.mode === "fainted" && (
+        <div style={{
+          position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", gap: 10, background: "rgba(60,50,50,0.35)",
+        }}>
+          <div style={{ ...card, fontSize: 17, fontWeight: 800, color: "#8a5a4a" }}>
+            😵 เชอร์รี่หมดแรง...<br/>
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: "#a3796a" }}>
+              กลับไปพักที่กลางทุ่ง ฟื้น HP เต็ม
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -177,6 +177,15 @@ const CLASSES = {
   },
 };
 const CLASS_WEAPON = { warrior: "cw", archer: "ca", mage: "cm", assassin: "cs", lancer: "cl", samurai: "ck" };
+// 👗 per-class outfit look: shirt/pants/trim colors + which accessory to show
+const CLASS_OUTFIT = {
+  warrior:  { shirt: 0xb03a4a, pants: 0x5a4a3a, trim: 0xe8c848, acc: "cape",     accColor: 0x8a2a3a }, // 🛡️ red tabard + gold trim + cape
+  archer:   { shirt: 0x3a7a4a, pants: 0x6a5a3a, trim: 0x8a6a3a, acc: "hood",     accColor: 0x2a5a38 }, // 🏹 green ranger tunic + hood
+  mage:     { shirt: 0x5a3a9a, pants: 0x3a2a6a, trim: 0xf0d060, acc: "robe",     accColor: 0x4a2a8a }, // 🔮 purple wizard robe + gold stars
+  assassin: { shirt: 0x2a2a38, pants: 0x1a1a24, trim: 0x6a1a2a, acc: "scarf",    accColor: 0x8a1a2a }, // 🗡️ black stealth suit + red scarf
+  lancer:   { shirt: 0x3a70b0, pants: 0x2a3a5a, trim: 0xc0c8d0, acc: "pauldron", accColor: 0x8a9aa8 }, // 🔱 blue armor + steel pauldrons
+  samurai:  { shirt: 0xb03028, pants: 0x2a2a2a, trim: 0xd8c840, acc: "kimono",   accColor: 0xd8503a }, // ⚔️ crimson kimono + obi belt
+};
 const ULTS = {
   warrior: { name: "เพลงดาบพันภพ", emoji: "🌪️⚔️", desc: "ฟันหมุน 3 ครั้ง ×0.9 + ป้องกัน +3" },
   archer: { name: "ฝนธนูพันดอก", emoji: "🏹", desc: "ธนู 5 ดอกร่วงจากฟ้า ×0.55 การันตีคริ 1 ดอก" },
@@ -284,7 +293,7 @@ export default function CherryAdventure() {
     inv: [], equip: { weapon: null, outfit: null, hat: null, mask: null, gloves: null, pants: null, shoes: null }, invOpen: false, plus: {}, potions: 1, mpPotions: 1, mp: 50, maxMp: 50, sortMode: "rarity", hasSave: null,
     gold: 80, shop: [], shopOpen: false,
     eventMsg: "", eventLeft: 0, dungeonAsk: false, dungeonFloor: 0, dungeonProgress: 1, quests: [], questOpen: false,
-    warpAsk: false, biomeName: "🌸 ทุ่งซากุระ", biomeIdx: 0, soundOn: true, musicOn: true, fishing: null, pondNear: false, skillPanel: false, sp: 0, skillRanks: {}, skillCap: 1, ultRank: 1, ultSkillSum: 0, sellPriority: SLOTS.slice(), sellSetup: false, statPts: 0, baseStats: {}, battleSpeed: 1, dexTab: false, achTab: false, achUnlocked: {}, combo: 0, homeOpen: false, team: [], petSp: 0, petSkillLv: {}, fuseA: null, fuseB: null, tutStep: null, ngPlus: 0, npcNear: false, npcTalk: null, storyChapter: 0,
+    warpAsk: false, biomeName: "🌸 ทุ่งซากุระ", biomeIdx: 0, soundOn: true, musicOn: true, fishing: null, pondNear: false, skillPanel: false, sp: 0, skillRanks: {}, skillCap: 1, ultRank: 1, ultSkillSum: 0, sellPriority: SLOTS.slice(), sellSetup: false, sellMaxRarity: "rare", statPts: 0, baseStats: {}, battleSpeed: 1, dexTab: false, achTab: false, achUnlocked: {}, combo: 0, homeOpen: false, team: [], petSp: 0, petSkillLv: {}, fuseA: null, fuseB: null, tutStep: null, ngPlus: 0, npcNear: false, npcTalk: null, storyChapter: 0, dailyReady: false, dailyStreak: 0,
     toast: "", toastAt: 0,
   });
 
@@ -523,6 +532,8 @@ export default function CherryAdventure() {
     G.biomeColliders = [];
     const activeColliders = () => G.biomeColliders && G.biomeColliders.length ? colliders.concat(G.biomeColliders) : colliders;
     G.activeColliders = activeColliders;
+    // 🌀 shared warp-pad keep-out (warp sits at 6.5,6.5) so no biome decor blocks it
+    const nearWarpG = (x, z) => Math.hypot(x - 6.5, z - 6.5) < 2.6;
     const pushOut = (obj, extra = 0.4) => {
       for (const c of (G.activeColliders ? G.activeColliders() : colliders)) {
         const dx = obj.position.x - c.x, dz = obj.position.z - c.z;
@@ -2263,6 +2274,97 @@ export default function CherryAdventure() {
       updateAura();
     };
 
+    // ---------- 👗 Class outfits (recolor body + class accessory) ----------
+    const classAccessories = {};
+    { // 🛡️ warrior — flowing cape on the back
+      const g = new THREE.Group();
+      const capeMat = new THREE.MeshStandardMaterial({ color: 0x8a2a3a, roughness: 0.7, side: THREE.DoubleSide });
+      const cape = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 1.1, 4, 6), capeMat);
+      cape.position.set(0, 1.35, -0.32); cape.rotation.x = 0.12;
+      const clasp = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.02, 8, 14), new THREE.MeshStandardMaterial({ color: 0xe8c848, metalness: 0.7 }));
+      clasp.position.set(0, 1.78, -0.2); clasp.rotation.x = Math.PI / 2;
+      g.add(cape, clasp);
+      g.userData.cloth = cape;
+      classAccessories.cape = g;
+    }
+    { // 🏹 archer — hood collar + shoulder cowl
+      const g = new THREE.Group();
+      const hoodMat = new THREE.MeshStandardMaterial({ color: 0x2a5a38, roughness: 0.8, side: THREE.DoubleSide });
+      const cowl = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.35, 14, 1, true), hoodMat);
+      cowl.position.set(0, 1.62, 0);
+      const hoodBack = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 10, 0, Math.PI * 2, 0, Math.PI / 2), hoodMat);
+      hoodBack.position.set(0, 1.78, -0.16); hoodBack.rotation.x = -0.5; hoodBack.scale.set(1, 1.3, 0.8);
+      g.add(cowl, hoodBack);
+      classAccessories.hood = g;
+    }
+    { // 🔮 mage — long robe skirt + floating star
+      const g = new THREE.Group();
+      const robeMat = new THREE.MeshStandardMaterial({ color: 0x4a2a8a, roughness: 0.6, side: THREE.DoubleSide });
+      const robe = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.7, 1.0, 16, 1, true), robeMat);
+      robe.position.set(0, 0.5, 0);
+      const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.09, 0), new THREE.MeshStandardMaterial({ color: 0xf0d060, emissive: 0xf0d060, emissiveIntensity: 0.8 }));
+      star.position.set(0, 1.5, 0.42);
+      g.add(robe, star);
+      g.userData.star = star;
+      classAccessories.robe = g;
+    }
+    { // 🗡️ assassin — trailing scarf
+      const g = new THREE.Group();
+      const scarfMat = new THREE.MeshStandardMaterial({ color: 0x8a1a2a, roughness: 0.7, side: THREE.DoubleSide });
+      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 10), scarfMat);
+      knot.position.set(0.02, 1.6, 0.18);
+      const tail = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.9, 2, 5), scarfMat);
+      tail.position.set(0.15, 1.25, -0.15); tail.rotation.set(0.2, 0.3, 0.3);
+      g.add(knot, tail);
+      g.userData.cloth = tail;
+      classAccessories.scarf = g;
+    }
+    { // 🔱 lancer — steel shoulder pauldrons
+      const g = new THREE.Group();
+      const steel = new THREE.MeshStandardMaterial({ color: 0x8a9aa8, metalness: 0.7, roughness: 0.3 });
+      for (const side of [-1, 1]) {
+        const pauldron = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10, 0, Math.PI * 2, 0, Math.PI / 2), steel);
+        pauldron.position.set(side * 0.44, 1.68, 0); pauldron.scale.set(1.1, 0.9, 1.1);
+        g.add(pauldron);
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 6), steel);
+        spike.position.set(side * 0.52, 1.82, 0); g.add(spike);
+      }
+      const gorget = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.05, 8, 18), steel);
+      gorget.position.set(0, 1.55, 0); gorget.rotation.x = Math.PI / 2; g.add(gorget);
+      classAccessories.pauldron = g;
+    }
+    { // ⚔️ samurai — kimono collar + obi belt sash
+      const g = new THREE.Group();
+      const obiMat = new THREE.MeshStandardMaterial({ color: 0xd8503a, roughness: 0.6 });
+      const collarMat = new THREE.MeshStandardMaterial({ color: 0xf0e8d8, roughness: 0.7, side: THREE.DoubleSide });
+      // V-collar over the chest
+      for (const side of [-1, 1]) {
+        const lapel = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.7), collarMat);
+        lapel.position.set(side * 0.12, 1.35, 0.28); lapel.rotation.set(0.1, side * 0.3, side * 0.4);
+        g.add(lapel);
+      }
+      const obi = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.22, 16, 1, true), obiMat);
+      obi.position.set(0, 1.08, 0);
+      const knot = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.12), obiMat);
+      knot.position.set(0, 1.08, -0.34);
+      g.add(obi, knot);
+      classAccessories.kimono = g;
+    }
+    Object.values(classAccessories).forEach((g) => { g.visible = false; char.add(g); });
+    G.classAccessories = classAccessories;
+
+    // apply the outfit look for a class: recolor shirt/pants + show the matching accessory
+    G.applyClassOutfit = (cls) => {
+      const o = CLASS_OUTFIT[cls];
+      if (!o) return;
+      // recolor the shirt (remove the striped texture, use a solid class color)
+      shirtMat.map = null; shirtMat.color = new THREE.Color(o.shirt); shirtMat.needsUpdate = true;
+      pantsMat.color = new THREE.Color(o.pants);
+      // show only this class's accessory
+      Object.entries(classAccessories).forEach(([k, g]) => (g.visible = k === o.acc));
+      G._classAcc = o.acc;
+    };
+
     // ---------- Hats & masks (attach to head) ----------
     const hatModels = {};
     { // h1 straw hat
@@ -2915,6 +3017,7 @@ export default function CherryAdventure() {
     for (let i = 0; i < 14; i++) {
       const a = Math.random() * Math.PI * 2, r = 2.5 + Math.random() * (FIELD_R - 3);
       const cx = Math.cos(a) * r, cz = Math.sin(a) * r;
+      if (nearWarpG(cx, cz)) continue; // 🌀 keep the warp clear
       makeCactus(cx, cz); desertColliders.push({ x: cx, z: cz, r: 0.5 });
     }
     // 🏔️ big sand dunes / mountains around the horizon
@@ -2981,7 +3084,9 @@ export default function CherryAdventure() {
     };
     for (let i = 0; i < 12; i++) {
       const a = Math.random() * Math.PI * 2, r = 2.5 + Math.random() * (FIELD_R - 3);
-      makePine(Math.cos(a) * r, Math.sin(a) * r);
+      const px = Math.cos(a) * r, pz = Math.sin(a) * r;
+      if (nearWarpG(px, pz)) continue; // 🌀 keep the warp clear
+      makePine(px, pz);
     }
     // ⛄ snowman (two stacked spheres + coal + carrot nose)
     const makeSnowman = (x, z) => {
@@ -3016,7 +3121,9 @@ export default function CherryAdventure() {
     };
     for (let i = 0; i < 4; i++) {
       const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * (FIELD_R - 4);
-      makeSnowman(Math.cos(a) * r, Math.sin(a) * r);
+      const mx = Math.cos(a) * r, mz = Math.sin(a) * r;
+      if (nearWarpG(mx, mz)) continue; // 🌀 keep the warp clear
+      makeSnowman(mx, mz);
     }
     // 🏔️ jagged ice mountains around the horizon
     for (let i = 0; i < 9; i++) {
@@ -3083,12 +3190,16 @@ export default function CherryAdventure() {
       caveColliders.push({ x, z, r: 0.4 });
     };
     // 🪨 rock wall segment (a chunky low wall of boulders) — used to build maze corridors
+    // 🌀 keep-out zone around the warp pad (6.5, 6.5) so nothing blocks it
+    const WARP_X = 6.5, WARP_Z = 6.5, WARP_CLEAR = 2.6;
+    const nearWarp = (x, z) => Math.hypot(x - WARP_X, z - WARP_Z) < WARP_CLEAR;
     const makeWall = (x, z, len, horizontal) => {
       const seg = Math.max(2, Math.round(len / 0.9));
       for (let k = 0; k < seg; k++) {
         const off = (k - (seg - 1) / 2) * 0.9;
         const bx = x + (horizontal ? off : 0);
         const bz = z + (horizontal ? 0 : off);
+        if (nearWarp(bx, bz)) continue; // 🌀 don't block the warp
         const boulder = new THREE.Mesh(new THREE.DodecahedronGeometry(rnd(0.55, 0.8), 0), k % 2 ? rockMat : rockDark);
         boulder.position.set(bx, rnd(0.3, 0.6), bz);
         boulder.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
@@ -3102,20 +3213,24 @@ export default function CherryAdventure() {
     const mazeWalls = [
       [-8, -4, 8, true], [-4, 2, 7, true], [3, -2, 6, true], [-2, 7, 9, true],
       [-9, 0, 8, false], [-3, -3, 6, false], [4, 3, 7, false], [8, -5, 6, false],
-      [0, -8, 5, true], [6, 6, 5, true],
+      [0, -8, 5, true], [2, 9, 5, true],
     ];
     mazeWalls.forEach(([x, z, len, h]) => makeWall(x, z, len, h));
     // scatter glowing crystals (some along the walls, some in the open)
     for (let i = 0; i < 10; i++) {
       const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * (FIELD_R - 3);
-      makeCrystal(Math.cos(a) * r, Math.sin(a) * r, i < 3);
+      const cx = Math.cos(a) * r, cz = Math.sin(a) * r;
+      if (nearWarp(cx, cz)) continue; // 🌀 keep the warp clear
+      makeCrystal(cx, cz, i < 3);
     }
     // 🪨 stalagmites rising from the floor + a few big ones
     for (let i = 0; i < 12; i++) {
       const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * (FIELD_R - 4);
+      const sx = Math.cos(a) * r, sz = Math.sin(a) * r;
+      if (nearWarp(sx, sz)) continue; // 🌀 keep the warp clear
       const sh = rnd(0.8, 2.2);
       const stal = new THREE.Mesh(new THREE.ConeGeometry(rnd(0.3, 0.6), sh, 6), i % 2 ? rockMat : rockDark);
-      stal.position.set(Math.cos(a) * r, sh / 2, Math.sin(a) * r);
+      stal.position.set(sx, sh / 2, sz);
       stal.castShadow = true;
       caveDecor.add(stal);
     }
@@ -3204,7 +3319,7 @@ export default function CherryAdventure() {
       rock.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
       rock.castShadow = true;
       volcanoDecor.add(rock);
-      if (Math.random() < 0.4) volColliders.push({ x: rx, z: rz, r: 0.4 });
+      if (Math.random() < 0.4 && !nearWarpG(rx, rz)) volColliders.push({ x: rx, z: rz, r: 0.4 }); // 🌀 keep warp clear
     }
     // small glowing embers rising off the ground
     const embers = [];
@@ -3258,7 +3373,9 @@ export default function CherryAdventure() {
     };
     for (let i = 0; i < 8; i++) {
       const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * (FIELD_R - 4);
-      makeIsland(Math.cos(a) * r, Math.sin(a) * r, rnd(0.8, 1.5));
+      const ix = Math.cos(a) * r, iz = Math.sin(a) * r;
+      if (nearWarpG(ix, iz)) continue; // 🌀 keep the warp clear
+      makeIsland(ix, iz, rnd(0.8, 1.5));
     }
     // ☁️ drifting fluffy clouds (clusters of spheres)
     const skyClouds = [];
@@ -3685,6 +3802,43 @@ export default function CherryAdventure() {
       return any;
     };
     G.questProgress = questProgress;
+
+    // 📅 DAILY LOGIN REWARD — escalating rewards for consecutive days (7-day cycle)
+    const DAILY_REWARDS = [
+      { gold: 100, emoji: "💰", label: "100 ทอง" },
+      { gold: 150, ball: 2, emoji: "💗", label: "150 ทอง + บอล 2" },
+      { gold: 200, emoji: "💰", label: "200 ทอง" },
+      { gold: 250, potion: 2, emoji: "🧪", label: "250 ทอง + ยา 2" },
+      { gold: 350, emoji: "💰", label: "350 ทอง" },
+      { gold: 450, ball: 3, emoji: "💗", label: "450 ทอง + บอล 3" },
+      { gold: 800, ball: 3, potion: 3, emoji: "🎁", label: "800 ทอง + บอล 3 + ยา 3 (โบนัสใหญ่!)" },
+    ];
+    const todayStamp = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+    G.checkDailyReward = () => {
+      const today = todayStamp();
+      if (G.lastDaily === today) { setUi((u) => ({ ...u, dailyReady: false })); return; } // already claimed today
+      // continue or reset the streak
+      const yd = new Date(); yd.setDate(yd.getDate() - 1);
+      const ydStamp = `${yd.getFullYear()}-${yd.getMonth()}-${yd.getDate()}`;
+      G.dailyStreak = (G.lastDaily === ydStamp) ? ((G.dailyStreak || 0)) : 0; // keep streak if yesterday, else reset
+      setUi((u) => ({ ...u, dailyReady: true, dailyStreak: G.dailyStreak || 0 }));
+    };
+    G.claimDaily = () => {
+      const today = todayStamp();
+      if (G.lastDaily === today) { toast("📅 วันนี้รับรางวัลไปแล้ว กลับมาใหม่พรุ่งนี้!"); return; }
+      const day = (G.dailyStreak || 0) % 7;
+      const r = DAILY_REWARDS[day];
+      G.gold += r.gold;
+      if (r.ball) G.balls = (G.balls || 0) + r.ball;
+      if (r.potion) G.potions = (G.potions || 0) + r.potion;
+      G.lastDaily = today;
+      G.dailyStreak = (G.dailyStreak || 0) + 1;
+      if (G.sfx) G.sfx.levelup();
+      toast(`📅✨ รางวัลล็อกอินวันที่ ${day + 1}! ได้ ${r.label} (ต่อเนื่อง ${G.dailyStreak} วัน)`);
+      setUi((u) => ({ ...u, dailyReady: false, dailyStreak: G.dailyStreak, gold: G.gold }));
+      syncPlayer();
+      if (G.saveGame) G.saveGame();
+    };
 
     // 🏅 Achievements — permanent goals with one-time gold rewards
     const ACHIEVEMENTS = [
@@ -4810,6 +4964,7 @@ export default function CherryAdventure() {
     G.ultRank = 1; // 🌟 ultimate rank 1..5
     G.sellPriority = SLOTS.slice(); // 💰 auto-sell slot priority order
     G.baseStats = { atk: 0, hp: 0, def: 0, crit: 0, luck: 0, mp: 0 }; // 💪 allocated base stats
+    G.lastDaily = null; G.dailyStreak = 0; // 📅 daily login tracking
     G.player.statPts = 0; // stat points to spend (2 per level)
     G.col = {};
     G.pets = {}; // per species: { lv, exp, stage }
@@ -5026,6 +5181,7 @@ export default function CherryAdventure() {
       });
       G.player.hp = Math.min(G.player.hp, effMaxHp());
       G.setWeaponVisual(G.equip.weapon);
+      if (G.applyClassOutfit) G.applyClassOutfit(G.cls); // 👗 class outfit look
       G.setOutfitVisual(G.equip.outfit);
       applyGear();
       toast(changed ? `🎽 สวมใส่ของแรงสุดครบ ${changed} ชิ้น!` : "🎽 สวมของดีที่สุดอยู่แล้ว");
@@ -5058,9 +5214,14 @@ export default function CherryAdventure() {
 
     // 💰 auto-sell surplus gear — keeps the best (and equipped) per slot, sells the rest.
     // Processes the LOWEST tiers first, and follows the player's slot-priority order.
+    // 💰 rarity tiers low→high; auto-sell only touches items at or below G.sellMaxRarity
+    const RARITY_ORDER = ["common", "rare", "epic", "secret", "dragon"];
+    const rarityRank = (r) => { const i = RARITY_ORDER.indexOf(r); return i < 0 ? 0 : i; };
+    G.sellMaxRarity = G.sellMaxRarity || "rare"; // default: sell common + rare only
     G.autoSell = () => {
       // default priority = the order in ui.sellPriority, else SLOTS as-is
       const priority = (G.sellPriority && G.sellPriority.length === SLOTS.length) ? G.sellPriority : SLOTS.slice();
+      const maxRank = rarityRank(G.sellMaxRarity); // only sell items with rarityRank <= this
       let sold = 0, earned = 0;
       // build a plan slot by slot in priority order
       priority.forEach((slot) => {
@@ -5072,6 +5233,7 @@ export default function CherryAdventure() {
         // keep #1 (the best); for the rest, keep 1 duplicate for enhancing, sell surplus
         owned.forEach((id, rank) => {
           const it = LOOT.find((x) => x.id === id);
+          if (!it || rarityRank(it.rarity) > maxRank) return; // 🛡️ never auto-sell high-rarity gear
           const isEquipped = G.equip[slot] === id;
           let copies = G.inv.filter((x) => x === id).length;
           // how many to keep: best item keeps 2 (for +enhance), others keep 0 unless equipped
@@ -5094,8 +5256,17 @@ export default function CherryAdventure() {
       G.gold += earned;
       applyGear();
       G.player.hp = Math.min(G.player.hp, effMaxHp());
-      toast(sold ? `💰 ขายอัตโนมัติ ${sold} ชิ้น ได้ ${earned} ทอง (เก็บของดีสุด+ของซ้ำไว้ตีบวก)` : "💰 ไม่มีของเกินให้ขาย");
+      const rn = (RARITY[G.sellMaxRarity] ? RARITY[G.sellMaxRarity].name : G.sellMaxRarity);
+      toast(sold ? `💰 ขายอัตโนมัติ ${sold} ชิ้น ได้ ${earned} ทอง (ขายเฉพาะระดับ ≤ ${rn} · เก็บของดีไว้)` : `💰 ไม่มีของระดับต่ำ (≤ ${rn}) ให้ขาย`);
       syncPlayer();
+    };
+    // 🔁 cycle the max rarity that auto-sell will touch
+    G.cycleSellRarity = () => {
+      const sellable = ["common", "rare", "epic"]; // never auto-sell secret/dragon
+      const i = sellable.indexOf(G.sellMaxRarity);
+      G.sellMaxRarity = sellable[(i + 1) % sellable.length];
+      toast(`💰 ตั้งค่าขายอัตโนมัติ: ขายระดับ ≤ ${RARITY[G.sellMaxRarity] ? RARITY[G.sellMaxRarity].name : G.sellMaxRarity}`);
+      setUi((u) => ({ ...u, sellMaxRarity: G.sellMaxRarity }));
     };
     // reorder a slot in the sell/keep priority (move up/down)
     G.moveSellPriority = (slot, dir) => {
@@ -5958,6 +6129,7 @@ export default function CherryAdventure() {
       if (G.computeTitle) G.computeTitle();
       setTimeout(() => setUi((u) => ({ ...u, tutStep: 0 })), 600);
       G.quests = []; refreshQuests(); // 📜 initial quests
+      if (G.checkDailyReward) G.checkDailyReward(); // 📅 daily login bonus
       setTimeout(() => G.saveGame && G.saveGame(), 100); // 💾 save the fresh start
       setUi((u) => ({ ...u, mode: "explore", cls: G.cls, col: {}, pets: {}, inv: [], equip: EMPTY_EQUIP(), msg: "" }));
       syncPlayer();
@@ -5979,7 +6151,7 @@ export default function CherryAdventure() {
       if (G.mode !== "explore" && G.mode !== "battle") return;
       try {
         window.localStorage.setItem(slotKey(), JSON.stringify({
-          v: 1, cls: G.cls, name: G.playerName, custom: G.custom, player: G.player, dungeonProgress: G.dungeonProgress || 1, skillRanks: G.skillRanks, ultRank: G.ultRank || 1, sellPriority: G.sellPriority, baseStats: G.baseStats, achStats: G.achStats, achUnlocked: G.achUnlocked, biomeBossDefeated: G.biomeBossDefeated,
+          v: 1, cls: G.cls, name: G.playerName, custom: G.custom, player: G.player, dungeonProgress: G.dungeonProgress || 1, skillRanks: G.skillRanks, ultRank: G.ultRank || 1, sellPriority: G.sellPriority, sellMaxRarity: G.sellMaxRarity, baseStats: G.baseStats, lastDaily: G.lastDaily, dailyStreak: G.dailyStreak, achStats: G.achStats, achUnlocked: G.achUnlocked, biomeBossDefeated: G.biomeBossDefeated,
           col: G.col, pets: G.pets, inv: G.inv, equip: G.equip, plus: G.plus,
           potions: G.potions, mpPotions: G.mpPotions, gold: G.gold, buddy: G.buddy,
           team: G.team, petSp: G.petSp, petSkillLv: G.petSkillLv, ngPlus: G.ngPlus || 0, storyChapter: G.storyChapter || 0,
@@ -6040,6 +6212,8 @@ export default function CherryAdventure() {
       G.ultRank = d.ultRank || 1;
       G.sellPriority = (d.sellPriority && d.sellPriority.length === SLOTS.length) ? d.sellPriority : SLOTS.slice();
       G.baseStats = d.baseStats || { atk: 0, hp: 0, def: 0, crit: 0, luck: 0, mp: 0 };
+      G.sellMaxRarity = d.sellMaxRarity || "rare";
+      G.lastDaily = d.lastDaily || null; G.dailyStreak = d.dailyStreak || 0;
       G.achStats = d.achStats || { wins: 0, bosses: 0, floor: 0, dragon: 0 };
       G.achUnlocked = d.achUnlocked || {};
       G.biomeBossDefeated = d.biomeBossDefeated || {};
@@ -6047,6 +6221,7 @@ export default function CherryAdventure() {
       G.bossSpawned = {};
       G.mode = "explore";
       G.setWeaponVisual(G.equip.weapon);
+      if (G.applyClassOutfit) G.applyClassOutfit(G.cls); // 👗 class outfit look
       G.setOutfitVisual(G.equip.outfit);
       applyGear();
       G.refreshShop(true);
@@ -6060,6 +6235,7 @@ export default function CherryAdventure() {
       else G.setBuddy(null);
       if (d.pos) char.position.set(d.pos.x || 0, 0, d.pos.z || 0);
       G.quests = []; refreshQuests(); // 📜
+      if (G.checkDailyReward) G.checkDailyReward(); // 📅 daily login bonus
       if (G.checkAchievements) G.checkAchievements();
       if (G.computeTitle) G.computeTitle();
       toast(`▶ ยินดีต้อนรับกลับ! ${CLASSES[G.cls].emoji} เชอร์รี่สาย${CLASSES[G.cls].name} Lv.${G.player.level}`);
@@ -6092,6 +6268,15 @@ export default function CherryAdventure() {
       const dt = Math.min(clock.getDelta(), 0.05);
       dtGlobal = dt;
       const t = clock.getElapsedTime();
+
+      // 👗 class outfit accessories: flutter cloth + spin mage star
+      if (G._classAcc && G.classAccessories) {
+        const acc = G.classAccessories[G._classAcc];
+        if (acc) {
+          if (acc.userData.cloth) acc.userData.cloth.rotation.x = (acc.userData.cloth.rotation.x || 0) * 0 + 0.12 + Math.sin(t * 3) * 0.08; // cape/scarf sway
+          if (acc.userData.star) { acc.userData.star.rotation.y = t * 2; acc.userData.star.position.y = 1.5 + Math.sin(t * 2) * 0.05; }
+        }
+      }
 
       // ---------- 🌗 day/night update ----------
       {
@@ -6444,14 +6629,21 @@ export default function CherryAdventure() {
             const golden = wilds.find((m) => m.userData.golden && m.userData.shy <= 0);
             if (golden) target = { x: golden.position.x, z: golden.position.z };
 
-            // 3) otherwise hunt the nearest monster
+            // 3) otherwise hunt a monster near the player's level first (safer XP),
+            //    only chasing much higher-level ones if nothing suitable is around
             if (!target) {
-              let best = null, bd = Infinity;
+              const myLv = G.player.level;
+              let best = null, bestScore = Infinity;
               wilds.forEach((m) => {
                 if (m.userData.shy > 0) return;
                 if (avoidBoss && m.userData.boss) return;
                 const d = Math.hypot(m.position.x - char.position.x, m.position.z - char.position.z);
-                if (d < bd) { bd = d; best = m; }
+                const lvGap = Math.abs((m.userData.lv || 1) - myLv);
+                // score: level closeness dominates (×3), distance is a tiebreak.
+                // over-leveled enemies get an extra penalty so we only pick them when nothing else is near.
+                const overPenalty = (m.userData.lv || 1) > myLv + 6 ? (m.userData.lv - myLv - 6) * 2 : 0;
+                const score = lvGap * 3 + d + overPenalty;
+                if (score < bestScore) { bestScore = score; best = m; }
               });
               if (best) target = { x: best.position.x, z: best.position.z };
             }
@@ -6501,9 +6693,29 @@ export default function CherryAdventure() {
             const dist = Math.hypot(tx, tz);
             if (dist < 0.12) G.moveTarget = null;
             else {
+              // 🧭 re-route: if an obstacle blocks the straight path, aim for a point beside it
+              const nx = tx / dist, nz = tz / dist;
+              let block = null, blockD = Infinity;
+              for (const c of (G.activeColliders ? G.activeColliders() : colliders)) {
+                const cvx = c.x - char.position.x, cvz = c.z - char.position.z;
+                const along = cvx * nx + cvz * nz;              // distance along the path
+                if (along <= 0.2 || along > dist) continue;      // behind us or past the target
+                const perp = Math.abs(cvx * -nz + cvz * nx);     // sideways offset from the path line
+                if (perp < c.r + 0.7 && along < blockD) { blockD = along; block = { c, cvx, cvz }; }
+              }
+              let gx = tx, gz = tz;
+              if (block) {
+                // steer to whichever side of the obstacle we're already leaning toward
+                const side = (block.cvx * -nz + block.cvz * nx) > 0 ? -1 : 1;
+                const px = -nz * side, pz = nx * side;
+                const wp = block.c.r + 1.1;
+                gx = (block.c.x + px * wp) - char.position.x;
+                gz = (block.c.z + pz * wp) - char.position.z;
+              }
+              const gl = Math.hypot(gx, gz) || 1;
               const ease = Math.min(1, dist / 0.7); // decelerate smoothly on arrival
-              dx = (tx / dist) * ease;
-              dz = (tz / dist) * ease;
+              dx = (gx / gl) * ease;
+              dz = (gz / gl) * ease;
             }
           }
         }
@@ -7733,6 +7945,28 @@ export default function CherryAdventure() {
 
   const totalCaught = Object.values(ui.col).reduce((a, b) => a + b, 0);
 
+  // 🪟 all bottom-menu panels — opening one closes the others (no overlap)
+  const MENU_FLAGS = ["shopOpen", "invOpen", "panelOpen", "questOpen", "skillPanel", "homeOpen", "warpAsk"];
+  const closeAllMenus = (extra = {}) => {
+    const cleared = {};
+    MENU_FLAGS.forEach((f) => (cleared[f] = false));
+    return { ...cleared, ...extra };
+  };
+  const toggleMenu = (name) => setUi((u) => {
+    const willOpen = !u[name];
+    const cleared = {};
+    MENU_FLAGS.forEach((f) => (cleared[f] = false));
+    return { ...u, ...cleared, [name]: willOpen };
+  });
+  // ✕ close button shown in the corner of every menu panel
+  const closeBtn = (name) => (
+    <button onClick={() => setUi((u) => ({ ...u, [name]: false }))} style={{
+      position: "absolute", top: 8, right: 8, width: 26, height: 26, borderRadius: 8,
+      border: "none", cursor: "pointer", fontSize: 15, fontWeight: 800, lineHeight: "26px",
+      color: "#a06a6a", background: "#f3ede4", padding: 0, fontFamily: font, zIndex: 2,
+    }}>✕</button>
+  );
+
   return (
     <div style={{ width: "100%", height: "100vh", position: "relative", background: "#eef2df", fontFamily: font }}>
       <style>{`@keyframes toastUp { 0%{opacity:0;transform:translateY(10px);} 15%{opacity:1;transform:translateY(0);} 75%{opacity:1;} 100%{opacity:0;transform:translateY(-14px);} } @keyframes pulse { from{transform:scale(1);} to{transform:scale(1.08);} } @keyframes hudscroll { 0%{transform:translateX(0);} 100%{transform:translateX(-50%);} }`}</style>
@@ -7972,6 +8206,26 @@ export default function CherryAdventure() {
         </div>
       )}
 
+      {/* 📅 daily login reward */}
+      {ui.dailyReady && ui.mode === "explore" && (
+        <div style={{
+          position: "absolute", top: 70, left: "50%", transform: "translateX(-50%)",
+          background: "linear-gradient(135deg,#fff2c8,#ffe0a0)", borderRadius: 16, padding: "12px 16px",
+          boxShadow: "0 6px 20px rgba(200,150,40,0.4)", border: "2px solid #f5c542",
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 6, zIndex: 50, maxWidth: 280,
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "#a5721a" }}>📅 รางวัลล็อกอินประจำวัน!</div>
+          <div style={{ fontSize: 11, color: "#b5852a", textAlign: "center" }}>
+            ต่อเนื่อง {ui.dailyStreak || 0} วัน · วันนี้คือวันที่ {((ui.dailyStreak || 0) % 7) + 1}/7
+          </div>
+          <button onClick={() => G.claimDaily()} style={{
+            padding: "8px 20px", borderRadius: 10, border: "none", cursor: "pointer",
+            fontSize: 13, fontWeight: 800, fontFamily: font, color: "#fff",
+            background: "linear-gradient(90deg,#f5a623,#f5c542)", boxShadow: "0 3px 8px rgba(200,150,40,0.4)",
+          }}>🎁 รับรางวัล</button>
+        </div>
+      )}
+
       {/* 🌀 warp map picker */}
       {ui.warpAsk && ui.mode === "explore" && (
         <div style={{
@@ -8048,7 +8302,7 @@ export default function CherryAdventure() {
             boxShadow: "0 2px 6px rgba(90,120,70,0.25)",
           }}>{ui.musicOn ? "🎵" : "🎜"}</button>
           {ui.mode === "explore" && (
-            <button onClick={() => setUi((u) => ({ ...u, homeOpen: true, achUnlocked: { ...G.achUnlocked } }))} title="บ้านถ้วยรางวัล" style={{
+            <button onClick={() => setUi((u) => ({ ...u, ...closeAllMenus(), homeOpen: true, achUnlocked: { ...G.achUnlocked } }))} title="บ้านถ้วยรางวัล" style={{
               width: 34, height: 34, borderRadius: "50%", border: "none", cursor: "pointer",
               fontSize: 15, background: "#fff", boxShadow: "0 2px 6px rgba(90,120,70,0.25)",
             }}>🏠</button>
@@ -8496,7 +8750,7 @@ export default function CherryAdventure() {
 
           {/* shop button */}
           <button
-            onClick={() => setUi((u) => ({ ...u, shopOpen: !u.shopOpen, invOpen: false, panelOpen: false }))}
+            onClick={() => toggleMenu("shopOpen")}
             style={{
               position: "absolute", right: 12, bottom: 28,
               width: 50, height: 50, borderRadius: 15, border: "none", cursor: "pointer",
@@ -8513,6 +8767,7 @@ export default function CherryAdventure() {
               background: "#fff", borderRadius: 16, padding: 12,
               boxShadow: "0 6px 20px rgba(90,120,70,0.3)",
             }}>
+              {closeBtn("shopOpen")}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                 <span style={{ fontSize: 14, fontWeight: 800, color: "#5a7a4a" }}>🏪 ร้านค้าเร่</span>
                 <span style={{ fontSize: 13, fontWeight: 800, color: "#c09020" }}>💰 {ui.gold}</span>
@@ -8609,7 +8864,7 @@ export default function CherryAdventure() {
 
           {/* collection button */}
           <button
-            onClick={() => setUi((u) => ({ ...u, panelOpen: !u.panelOpen, invOpen: false }))}
+            onClick={() => toggleMenu("panelOpen")}
             style={{
               position: "absolute", right: 12, bottom: 136,
               width: 50, height: 50, borderRadius: 15, border: "none", cursor: "pointer",
@@ -8621,7 +8876,7 @@ export default function CherryAdventure() {
 
           {/* ⚡ skill upgrade button */}
           <button
-            onClick={() => setUi((u) => ({ ...u, skillPanel: !u.skillPanel }))}
+            onClick={() => toggleMenu("skillPanel")}
             style={{
               position: "absolute", right: 12, bottom: 298,
               width: 50, height: 50, borderRadius: 15, border: "none", cursor: "pointer",
@@ -8645,6 +8900,7 @@ export default function CherryAdventure() {
               background: "#fff", borderRadius: 16, padding: 12,
               boxShadow: "0 6px 20px rgba(90,120,70,0.3)",
             }}>
+              {closeBtn("skillPanel")}
               <div style={{ fontSize: 14, fontWeight: 800, color: "#5a7a4a", marginBottom: 4 }}>
                 ⚡ อัพเกรดสกิลอาชีพ
               </div>
@@ -8767,7 +9023,7 @@ export default function CherryAdventure() {
 
           {/* 📜 quest button */}
           <button
-            onClick={() => setUi((u) => ({ ...u, questOpen: !u.questOpen, invOpen: false, panelOpen: false }))}
+            onClick={() => toggleMenu("questOpen")}
             style={{
               position: "absolute", right: 12, bottom: 244,
               width: 50, height: 50, borderRadius: 15, border: "none", cursor: "pointer",
@@ -8786,7 +9042,7 @@ export default function CherryAdventure() {
 
           {/* bag button */}
           <button
-            onClick={() => setUi((u) => ({ ...u, invOpen: !u.invOpen, panelOpen: false }))}
+            onClick={() => toggleMenu("invOpen")}
             style={{
               position: "absolute", right: 12, bottom: 190,
               width: 50, height: 50, borderRadius: 15, border: "none", cursor: "pointer",
@@ -8811,6 +9067,7 @@ export default function CherryAdventure() {
               background: "#fff", borderRadius: 16, padding: 12,
               boxShadow: "0 6px 20px rgba(90,120,70,0.3)",
             }}>
+              {closeBtn("questOpen")}
               <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                 <button onClick={() => setUi((u) => ({ ...u, achTab: false }))} style={{
                   flex: 1, padding: "6px 0", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: font,
@@ -8892,6 +9149,7 @@ export default function CherryAdventure() {
               background: "#fff", borderRadius: 16, padding: 12,
               boxShadow: "0 6px 20px rgba(90,120,70,0.3)",
             }}>
+              {closeBtn("invOpen")}
               <div style={{ fontSize: 14, fontWeight: 800, color: "#5a7a4a", marginBottom: 6 }}>
                 🎒 กระเป๋าอุปกรณ์ — แตะเพื่อสวมใส่
               </div>
@@ -8921,6 +9179,12 @@ export default function CherryAdventure() {
                   background: ui.sellSetup ? "#f0d0a0" : "#f3ede4",
                 }}>⚙️ ลำดับ</button>
               </div>
+              {/* 🏷️ auto-sell rarity limit — never sells above this */}
+              <button onClick={() => G.cycleSellRarity()} style={{
+                width: "100%", padding: "7px 0", borderRadius: 10, border: "none", cursor: "pointer",
+                fontSize: 11.5, fontWeight: 800, fontFamily: font, marginBottom: 6,
+                color: "#fff", background: `linear-gradient(90deg, ${RARITY[ui.sellMaxRarity] ? RARITY[ui.sellMaxRarity].color : "#8a9aa8"}, #b0b8c0)`,
+              }}>🏷️ ขายเฉพาะระดับ ≤ {RARITY[ui.sellMaxRarity] ? RARITY[ui.sellMaxRarity].name : "หายาก"} (แตะเปลี่ยน)</button>
               {ui.sellSetup && (
                 <div style={{ background: "#faf6ee", borderRadius: 12, padding: "8px 10px", marginBottom: 8 }}>
                   <div style={{ fontSize: 10.5, color: "#8a7a5a", marginBottom: 6, lineHeight: 1.5 }}>
@@ -9075,6 +9339,7 @@ export default function CherryAdventure() {
               background: "#fff", borderRadius: 16, padding: 12,
               boxShadow: "0 6px 20px rgba(90,120,70,0.3)",
             }}>
+              {closeBtn("panelOpen")}
               <div style={{ display: "flex", gap: 6, marginBottom: 6, flexShrink: 0 }}>
                 <button onClick={() => setUi((u) => ({ ...u, dexTab: false }))} style={{
                   flex: 1, padding: "6px 0", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: font,
